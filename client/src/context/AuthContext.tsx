@@ -1,9 +1,10 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { api, AuthUser } from '../lib/api';
+import { api, AuthUser, Role } from '../lib/api';
 
 interface AuthCtx {
   user: AuthUser | null;
   login: (email: string, password: string, mode?: 'ONLINE' | 'OFFLINE') => Promise<AuthUser>;
+  register: (input: { name: string; email: string; password: string; role: Role }) => Promise<AuthUser>;
   logout: () => void;
 }
 
@@ -25,13 +26,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return data.user as AuthUser;
   }
 
+  // Register a new account, then immediately sign in so the user lands authenticated.
+  async function register(input: { name: string; email: string; password: string; role: Role }) {
+    await api.post('/auth/register', input);
+    return login(input.email, input.password);
+  }
+
   function logout() {
     localStorage.removeItem('es_token');
     localStorage.removeItem('es_user');
     setUser(null);
   }
 
-  return <Ctx.Provider value={{ user, login, logout }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ user, login, register, logout }}>{children}</Ctx.Provider>;
 }
 
 export const useAuth = () => useContext(Ctx);
