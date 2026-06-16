@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+  color: #1f1720;
+  background:
+    radial-gradient(1200px 600px at 80% -10%, #ffe4ec 0%, transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, #fff5f7 0%, transparent 60%),
+    linear-gradient(160deg, #fff9fb 0%, #fff0f5 100%);
+  min-height: 100vh;
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 8px 32px rgba(216, 31, 100, 0.12);
+}
+
+/* Anti-cheat: disable selection during the locked exam runner */
+.exam-locked,
+.exam-locked * {
+  -webkit-user-select: none;
+  user-select: none;
+}
