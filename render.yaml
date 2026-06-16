@@ -1,0 +1,19 @@
+# Render Blueprint for the Exam Shield backend.
+# Create the service via Render → New → Blueprint, pointing at this repo.
+services:
+  - type: web
+    name: exam-shield-api
+    runtime: node
+    rootDir: server
+    plan: free
+    buildCommand: npm install && npm run prisma:generate && npm run build
+    startCommand: npx prisma migrate deploy && npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false   # paste your Neon connection string in the dashboard
+      - key: CLIENT_ORIGIN
+        sync: false   # set to your Vercel URL after the frontend is deployed

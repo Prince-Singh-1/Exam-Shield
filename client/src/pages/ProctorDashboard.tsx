@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../lib/api';
+import { api, API_ORIGIN } from '../lib/api';
 import { Card } from '../components/ui';
 
 interface Violation {
@@ -41,7 +41,7 @@ export function ProctorDashboard() {
         {violations.map((v) => (
           <Card key={v.id} className="flex gap-4">
             {v.capturePath ? (
-              <img src={`/${v.capturePath}`} alt="capture" className="h-24 w-32 rounded-lg object-cover" />
+              <img src={`${API_ORIGIN}/${v.capturePath}`} alt="capture" className="h-24 w-32 rounded-lg object-cover" />
             ) : (
               <div className="flex h-24 w-32 items-center justify-center rounded-lg bg-sakura-50 text-2xl">⚠️</div>
             )}
