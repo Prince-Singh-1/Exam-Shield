@@ -1,0 +1,127 @@
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { api } from '../lib/api';
+import { Button, Card, Field, inputClass } from '../components/ui';
+
+export function ExamBuilder() {
+  const nav = useNavigate();
+  const [form, setForm] = useState({
+    title: '',
+    mode: 'OFFLINE' as 'ONLINE' | 'OFFLINE',
+    examDate: '',
+    leadTimeHours: 12,
+    numberOfSets: 4,
+    easyPerSet: 10,
+    mediumPerSet: 6,
+    hardPerSet: 4,
+    durationMinutes: 90,
+    instructions:
+      'Read all questions carefully.\nAttempt all questions.\nFor MCQs, select the single best option.\nNo electronic devices are permitted.',
+  });
+  const [error, setError] = useState('');
+  const [created, setCreated] = useState<any>(null);
+
+  const perSet = form.easyPerSet + form.mediumPerSet + form.hardPerSet;
+  const weight = form.easyPerSet * 1 + form.mediumPerSet * 2 + form.hardPerSet * 3;
+  const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
+  const num = (k: string) => (e: any) => set(k, Number(e.target.value));
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    try {
+      const { data } = await api.post('/exams', {
+        ...form,
+        examDate: new Date(form.examDate).toISOString(),
+      });
+      setCreated(data);
+    } catch (err: any) {
+      setError(err?.response?.data?.error ? JSON.stringify(err.response.data.error) : 'Failed');
+    }
+  }
+
+  if (created) {
+    return (
+      <div className="mx-auto max-w-xl px-6 py-10">
+        <Card>
+          <h1 className="font-serif text-2xl font-bold text-sakura-600">Exam created ✅</h1>
+          <p className="mt-2 text-ink/70">"{created.title}" ({created.mode}) is ready.</p>
+          {created.mode === 'OFFLINE' && created.generateAt && (
+            <p className="mt-2 text-sm text-ink/60">
+              Papers will auto-generate at {new Date(created.generateAt).toLocaleString()}
+              {' '}({form.leadTimeHours}h before the exam).
+            </p>
+          )}
+          <p className="mt-3 rounded-lg bg-sakura-50 p-3 text-xs">Exam ID: <b>{created.id}</b></p>
+          <div className="mt-4 flex gap-3">
+            <Button onClick={() => nav('/dashboard')}>Back to dashboard</Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-2xl px-6 py-10">
+      <Card>
+        <h1 className="font-serif text-2xl font-bold text-sakura-600">Create exam</h1>
+        <form onSubmit={submit} className="mt-5 space-y-4">
+          <Field label="Title">
+            <input className={inputClass} value={form.title} onChange={(e) => set('title', e.target.value)} required />
+          </Field>
+
+          <div className="flex rounded-xl bg-sakura-50 p-1">
+            {(['OFFLINE', 'ONLINE'] as const).map((m) => (
+              <button key={m} type="button" onClick={() => set('mode', m)}
+                className={`flex-1 rounded-lg py-2 text-sm font-medium ${form.mode === m ? 'bg-white text-sakura-600 shadow' : 'text-ink/50'}`}>
+                {m === 'OFFLINE' ? '📄 Offline (printed)' : '🟢 Online (proctored)'}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Exam date & time">
+              <input className={inputClass} type="datetime-local" value={form.examDate} onChange={(e) => set('examDate', e.target.value)} required />
+            </Field>
+            {form.mode === 'OFFLINE' && (
+              <Field label="Generate paper (hours before)">
+                <input className={inputClass} type="number" min={0} value={form.leadTimeHours} onChange={num('leadTimeHours')} />
+              </Field>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Number of sets">
+              <input className={inputClass} type="number" min={1} value={form.numberOfSets} onChange={num('numberOfSets')} />
+            </Field>
+            <Field label="Duration (minutes)">
+              <input className={inputClass} type="number" min={1} value={form.durationMinutes} onChange={num('durationMinutes')} />
+            </Field>
+          </div>
+
+          <div className="rounded-xl bg-sakura-50/60 p-4">
+            <p className="mb-3 text-sm font-medium text-ink/70">Questions per set, by difficulty</p>
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="Easy"><input className={inputClass} type="number" min={0} value={form.easyPerSet} onChange={num('easyPerSet')} /></Field>
+              <Field label="Medium"><input className={inputClass} type="number" min={0} value={form.mediumPerSet} onChange={num('mediumPerSet')} /></Field>
+              <Field label="Hard"><input className={inputClass} type="number" min={0} value={form.hardPerSet} onChange={num('hardPerSet')} /></Field>
+            </div>
+            <p className="mt-3 text-xs text-ink/60">
+              {perSet} questions/set · difficulty weight per set: <b>{weight}</b> (identical across all sets → balanced)
+            </p>
+          </div>
+
+          <Field label="Instructions (printed/shown before exam)">
+            <textarea className={inputClass} rows={4} value={form.instructions} onChange={(e) => set('instructions', e.target.value)} />
+          </Field>
+
+          {error && <p className="text-sm text-sakura-600">{error}</p>}
+          <div className="flex gap-3">
+            <Button type="submit">Create exam</Button>
+            <button type="button" onClick={() => nav('/dashboard')} className="text-sm text-ink/60 underline">Cancel</button>
+          </div>
+        </form>
+      </Card>
+    </div>
+  );
+}
