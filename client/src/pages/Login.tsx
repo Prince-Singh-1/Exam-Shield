@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Button, Card, Field, inputClass } from '../components/ui';
 
@@ -61,7 +61,11 @@ export function Login() {
           <Button className="w-full" disabled={loading}>{loading ? 'Signing in…' : 'Sign in'}</Button>
         </form>
 
-        <div className="mt-5 rounded-xl bg-sakura-50/60 p-3 text-xs text-ink/60">
+        <p className="mt-5 text-center text-sm text-ink/60">
+          New to Exam Shield? <Link to="/signup" className="font-medium text-sakura-600 underline">Create an account</Link>
+        </p>
+
+        <div className="mt-4 rounded-xl bg-sakura-50/60 p-3 text-xs text-ink/60">
           <p className="font-medium">Demo accounts (password: <code>password123</code>)</p>
           <p>admin@ · examiner@ · proctor@ · student@ — examshield.dev</p>
         </div>
