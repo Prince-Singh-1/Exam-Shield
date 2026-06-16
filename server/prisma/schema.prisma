@@ -1,0 +1,161 @@
+// Exam Shield — Prisma schema
+// Datasource: PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  EXAMINER
+  PROCTOR
+  STUDENT
+}
+
+enum ExamMode {
+  ONLINE
+  OFFLINE
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum QuestionType {
+  MCQ
+  SUBJECTIVE
+}
+
+enum ExamStatus {
+  DRAFT
+  SCHEDULED
+  GENERATED
+  ACTIVE
+  COMPLETED
+}
+
+enum ViolationType {
+  TAB_SWITCH
+  FULLSCREEN_EXIT
+  WINDOW_BLUR
+  COPY_PASTE
+  DEVTOOLS
+  GAZE_AWAY
+  PHONE_DETECTED
+  MULTIPLE_FACES
+  NO_FACE
+  VOICE_DETECTED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role
+  createdAt    DateTime @default(now())
+
+  createdExams     Exam[]            @relation("ExamCreator")
+  generatedPapers  GeneratedPaper[]  @relation("PaperGenerator")
+  attempts         Attempt[]
+  violations       Violation[]
+}
+
+model Question {
+  id          String       @id @default(cuid())
+  text        String
+  type        QuestionType @default(MCQ)
+  difficulty  Difficulty
+  options     Json?        // array of { id, text } for MCQ
+  correctKey  String?      // option id of correct answer for MCQ
+  subject     String?
+  createdAt   DateTime     @default(now())
+
+  paperItems  PaperItem[]
+}
+
+model Exam {
+  id              String     @id @default(cuid())
+  title           String
+  mode            ExamMode
+  status          ExamStatus @default(DRAFT)
+  examDate        DateTime
+  // Offline: how many hours before examDate to auto-generate papers
+  leadTimeHours   Int        @default(12)
+  generateAt      DateTime?  // examDate - leadTimeHours (offline)
+  // Set configuration
+  numberOfSets    Int        @default(1)
+  questionsPerSet Int        @default(0)
+  easyPerSet      Int        @default(0)
+  mediumPerSet    Int        @default(0)
+  hardPerSet      Int        @default(0)
+  durationMinutes Int        @default(60)
+  instructions    String?
+
+  createdById     String
+  createdBy       User       @relation("ExamCreator", fields: [createdById], references: [id])
+  createdAt       DateTime   @default(now())
+
+  papers          GeneratedPaper[]
+  attempts        Attempt[]
+}
+
+model GeneratedPaper {
+  id            String   @id @default(cuid())
+  examId        String
+  exam          Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  setLabel      String   // e.g. "Set A"
+  totalWeight   Int      // sum of difficulty weights (for balance verification)
+  // Anti-leak audit stamp
+  examDate      DateTime
+  generatedAt   DateTime @default(now())
+  generatedById String
+  generatedBy   User     @relation("PaperGenerator", fields: [generatedById], references: [id])
+
+  items         PaperItem[]
+
+  @@unique([examId, setLabel])
+}
+
+model PaperItem {
+  id         String         @id @default(cuid())
+  paperId    String
+  paper      GeneratedPaper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question       @relation(fields: [questionId], references: [id])
+  order      Int
+}
+
+model Attempt {
+  id          String    @id @default(cuid())
+  examId      String
+  exam        Exam      @relation(fields: [examId], references: [id], onDelete: Cascade)
+  studentId   String
+  student     User      @relation(fields: [studentId], references: [id])
+  setLabel    String?
+  startedAt   DateTime  @default(now())
+  submittedAt DateTime?
+  answers     Json?     // { questionId: optionId | text }
+  score       Int?
+
+  violations  Violation[]
+}
+
+model Violation {
+  id          String        @id @default(cuid())
+  attemptId   String
+  attempt     Attempt       @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  studentId   String
+  student     User          @relation(fields: [studentId], references: [id])
+  type        ViolationType
+  detail      String?
+  capturePath String?       // path to timestamped snapshot
+  createdAt   DateTime      @default(now())
+}
