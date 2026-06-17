@@ -175,12 +175,12 @@ export function ExamQuestionCollector({
   }
 
   return (
-    <div className="rounded-xl border border-sakura-100 bg-white/60 p-4">
+    <div className="rounded-xl border-2 border-sakura-300 bg-white/80 p-5 shadow-glass">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="text-sm font-semibold text-ink/70">Questions to add for this paper</p>
+          <h2 className="font-serif text-2xl font-bold text-sakura-600">Enter questions by difficulty rating</h2>
           <p className="mt-1 text-xs text-ink/50">
-            Required now: {requirements.EASY} easy, {requirements.MEDIUM} medium, {requirements.HARD} hard.
+            Based on your paper settings, add {requirements.EASY} easy, {requirements.MEDIUM} medium, and {requirements.HARD} hard questions.
           </p>
         </div>
         <div className="grid grid-cols-3 gap-2 text-center text-xs text-ink/60">
@@ -207,10 +207,13 @@ export function ExamQuestionCollector({
 
       <div className="mt-4 space-y-4">
         {DIFFICULTIES.map(({ key, label }) => (
-          <details key={key} open={requirements[key] > 0} className="rounded-xl border border-sakura-100 bg-white/70 p-4">
-            <summary className="cursor-pointer text-sm font-semibold text-sakura-600">
-              {label} questions ({requirements[key]})
-            </summary>
+          <section key={key} className="rounded-xl border border-sakura-100 bg-white/70 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-sakura-600">{label} questions</h3>
+              <span className="rounded-full bg-sakura-50 px-3 py-1 text-xs font-semibold text-ink/60">
+                {requirements[key]} required
+              </span>
+            </div>
             {drafts[key].length === 0 ? (
               <p className="mt-3 text-sm text-ink/50">No {label.toLowerCase()} questions requested.</p>
             ) : (
@@ -260,7 +263,7 @@ export function ExamQuestionCollector({
                 ))}
               </div>
             )}
-          </details>
+          </section>
         ))}
       </div>
 
