@@ -20,7 +20,8 @@ declare global {
 }
 
 export function signToken(payload: AuthPayload): string {
-  return jwt.sign(payload, config.jwtSecret, { expiresIn: config.jwtExpiresIn });
+  const options: jwt.SignOptions = { expiresIn: config.jwtExpiresIn as jwt.SignOptions['expiresIn'] };
+  return jwt.sign(payload, config.jwtSecret, options);
 }
 
 export function authenticate(req: Request, res: Response, next: NextFunction) {

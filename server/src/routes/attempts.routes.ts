@@ -9,6 +9,19 @@ const router = Router();
 
 router.use(authenticate);
 
+async function loadPublicQuestions(questionIds: string[]) {
+  const questions = await prisma.question.findMany({
+    where: { id: { in: questionIds } },
+    select: { id: true, text: true, type: true, options: true }, // no correctKey
+  });
+  const byId = new Map(questions.map((q) => [q.id, q]));
+  const ordered = questionIds.map((id) => byId.get(id)).filter(Boolean);
+  if (ordered.length !== questionIds.length) {
+    throw new Error('Question bank changed while preparing this paper. Try again.');
+  }
+  return ordered;
+}
+
 /**
  * Student starts an ONLINE exam. The paper is assembled JUST NOW from the bank,
  * so questions stay secret until the moment the student begins. Correct answers
@@ -25,32 +38,59 @@ router.post('/:examId/start', authorize(Role.STUDENT), async (req, res) => {
     where: { examId: exam.id, studentId: req.user!.sub, submittedAt: null },
   });
   if (existing) {
-    return res.status(409).json({ error: 'Attempt already in progress', attemptId: existing.id });
+    const saved = existing.answers as { questionIds?: string[] } | null;
+    if (Array.isArray(saved?.questionIds) && saved.questionIds.length > 0) {
+      try {
+        const questions = await loadPublicQuestions(saved.questionIds);
+        return res.json({
+          attemptId: existing.id,
+          durationMinutes: exam.durationMinutes,
+          instructions: exam.instructions,
+          questions,
+          resumed: true,
+        });
+      } catch (e) {
+        return res.status(400).json({ error: (e as Error).message });
+      }
+    }
   }
 
-  const bank = await prisma.question.findMany({ select: { id: true, difficulty: true } });
-  const [set] = generateBalancedSets(bank, {
-    numberOfSets: 1,
-    easyPerSet: exam.easyPerSet,
-    mediumPerSet: exam.mediumPerSet,
-    hardPerSet: exam.hardPerSet,
-  });
+  let set;
+  try {
+    const bank = await prisma.question.findMany({ select: { id: true, difficulty: true } });
+    [set] = generateBalancedSets(bank, {
+      numberOfSets: 1,
+      easyPerSet: exam.easyPerSet,
+      mediumPerSet: exam.mediumPerSet,
+      hardPerSet: exam.hardPerSet,
+    });
+  } catch (e) {
+    return res.status(400).json({ error: (e as Error).message });
+  }
+  if (set.questionIds.length === 0) {
+    return res.status(400).json({ error: 'This exam is configured with 0 questions per set.' });
+  }
 
-  const questions = await prisma.question.findMany({
-    where: { id: { in: set.questionIds } },
-    select: { id: true, text: true, type: true, options: true }, // no correctKey
-  });
-  // Preserve randomized order from the generator.
-  const ordered = set.questionIds.map((id) => questions.find((q) => q.id === id)!);
+  let ordered;
+  try {
+    ordered = await loadPublicQuestions(set.questionIds);
+  } catch (e) {
+    return res.status(400).json({ error: (e as Error).message });
+  }
 
-  const attempt = await prisma.attempt.create({
-    data: {
-      examId: exam.id,
-      studentId: req.user!.sub,
-      setLabel: 'ONLINE',
-      answers: { questionIds: set.questionIds },
-    },
-  });
+  const attempt = existing
+    ? await prisma.attempt.update({
+        where: { id: existing.id },
+        data: { setLabel: 'ONLINE', answers: { questionIds: set.questionIds } },
+      })
+    : await prisma.attempt.create({
+        data: {
+          examId: exam.id,
+          studentId: req.user!.sub,
+          setLabel: 'ONLINE',
+          answers: { questionIds: set.questionIds },
+        },
+      });
 
   res.json({
     attemptId: attempt.id,

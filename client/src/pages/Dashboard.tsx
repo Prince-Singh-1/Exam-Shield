@@ -3,6 +3,14 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { Button, Card } from '../components/ui';
+import { QuestionBank } from '../components/QuestionBank';
+
+interface Paper {
+  id: string;
+  setLabel: string;
+  totalWeight: number;
+  generatedAt: string;
+}
 
 interface Exam {
   id: string;
@@ -10,6 +18,7 @@ interface Exam {
   mode: 'ONLINE' | 'OFFLINE';
   status: string;
   examDate: string;
+  papers?: Paper[];
   _count?: { papers: number; attempts: number };
 }
 
@@ -17,18 +26,60 @@ export function Dashboard() {
   const { user, logout } = useAuth();
   const nav = useNavigate();
   const [exams, setExams] = useState<Exam[]>([]);
+  const [busyExamId, setBusyExamId] = useState('');
+  const [message, setMessage] = useState('');
   const isStaff = user && ['ADMIN', 'EXAMINER'].includes(user.role);
+
+  async function loadExams() {
+    const r = await api.get('/exams');
+    setExams(r.data);
+  }
 
   useEffect(() => {
     if (isStaff || user?.role === 'PROCTOR') {
-      api.get('/exams').then((r) => setExams(r.data)).catch(() => undefined);
+      loadExams().catch(() => setMessage('Could not load exams.'));
     }
   }, [isStaff, user]);
 
   async function generate(id: string) {
-    await api.post(`/exams/${id}/generate`);
-    const r = await api.get('/exams');
-    setExams(r.data);
+    setMessage('');
+    setBusyExamId(id);
+    try {
+      const { data } = await api.post(`/exams/${id}/generate`);
+      await loadExams();
+      setMessage(
+        data.skipped
+          ? data.reason
+          : `Generated ${data.sets} balanced paper set${data.sets === 1 ? '' : 's'}.`,
+      );
+    } catch (err: any) {
+      setMessage(err?.response?.data?.error ?? 'Could not generate papers. Check question-bank counts.');
+    } finally {
+      setBusyExamId('');
+    }
+  }
+
+  async function downloadPdf(exam: Exam, paper: Paper) {
+    setMessage('');
+    setBusyExamId(exam.id);
+    try {
+      const { data } = await api.get(`/exams/${exam.id}/papers/${paper.id}/pdf`, { responseType: 'blob' });
+      const blob = data instanceof Blob ? data : new Blob([data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const safeTitle = exam.title.replace(/[^a-z0-9]+/gi, '-').replace(/(^-|-$)/g, '') || 'exam';
+      const safeSet = paper.setLabel.replace(/[^a-z0-9]+/gi, '-').replace(/(^-|-$)/g, '') || 'set';
+      a.href = url;
+      a.download = `${safeTitle}-${safeSet}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setMessage(err?.response?.data?.error ?? 'Could not download PDF.');
+    } finally {
+      setBusyExamId('');
+    }
   }
 
   return (
@@ -44,6 +95,12 @@ export function Dashboard() {
         </div>
       </header>
 
+      {message && (
+        <div className="mb-4 rounded-xl border border-sakura-100 bg-white/70 px-4 py-3 text-sm text-ink/70 shadow-glass">
+          {message}
+        </div>
+      )}
+
       {user?.role === 'STUDENT' && (
         <Card>
           <h2 className="font-serif text-xl font-bold">Your online exams</h2>
@@ -54,11 +111,19 @@ export function Dashboard() {
         </Card>
       )}
 
+      {isStaff && (
+        <div className="mb-6">
+          <QuestionBank />
+        </div>
+      )}
+
       {(isStaff || user?.role === 'PROCTOR') && (
         <div className="space-y-4">
+          <h2 className="font-serif text-2xl font-bold text-sakura-600">Exams</h2>
           {exams.length === 0 && <Card><p className="text-ink/60">No exams yet.</p></Card>}
           {exams.map((ex) => (
-            <Card key={ex.id} className="flex items-center justify-between">
+            <Card key={ex.id}>
+              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div>
                 <p className="font-serif text-lg font-bold">{ex.title}</p>
                 <p className="text-sm text-ink/60">
@@ -68,17 +133,30 @@ export function Dashboard() {
                 <p className="mt-1 text-xs text-ink/40">ID: {ex.id}</p>
               </div>
               {isStaff && (
-                <div className="flex gap-2">
-                  <Button onClick={() => generate(ex.id)}>Generate now</Button>
-                  {ex._count?.papers ? (
-                    <a
-                      className="rounded-xl border border-sakura-300 px-4 py-2.5 text-sm"
-                      href={`/dashboard`}
-                      onClick={(e) => { e.preventDefault(); nav('/exams/new'); }}
-                    >View</a>
-                  ) : null}
+                <div className="flex flex-wrap gap-2">
+                  {ex.mode === 'OFFLINE' && (
+                    <Button onClick={() => generate(ex.id)} disabled={busyExamId === ex.id}>
+                      {busyExamId === ex.id ? 'Working...' : 'Generate now'}
+                    </Button>
+                  )}
                 </div>
               )}
+              </div>
+              {isStaff && ex.papers?.length ? (
+                <div className="mt-4 flex flex-wrap gap-2 border-t border-sakura-100 pt-4">
+                  {ex.papers.map((paper) => (
+                    <button
+                      key={paper.id}
+                      type="button"
+                      onClick={() => downloadPdf(ex, paper)}
+                      disabled={busyExamId === ex.id}
+                      className="rounded-xl border border-sakura-300 bg-white/70 px-4 py-2 text-sm font-medium text-sakura-600 transition hover:bg-white disabled:opacity-50"
+                    >
+                      Download {paper.setLabel} PDF
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </Card>
           ))}
         </div>

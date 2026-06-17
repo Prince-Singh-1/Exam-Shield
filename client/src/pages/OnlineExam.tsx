@@ -64,9 +64,15 @@ export function OnlineExam() {
     try {
       // Paper is assembled NOW — questions were secret until this moment.
       const { data } = await api.post(`/attempts/${examId}/start`);
+      const loadedQuestions = data.questions ?? [];
+      if (!loadedQuestions.length) {
+        setError('No questions are available for this exam. Ask the examiner to add questions to the bank.');
+        return;
+      }
       setAttemptId(data.attemptId);
       attemptRef.current = data.attemptId;
-      setQuestions(data.questions);
+      setQuestions(loadedQuestions);
+      setAnswers({});
       setInstructions(data.instructions ?? '');
       setDuration(data.durationMinutes);
       setSecondsLeft(data.durationMinutes * 60);

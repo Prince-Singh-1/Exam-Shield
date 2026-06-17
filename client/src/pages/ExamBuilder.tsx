@@ -29,6 +29,10 @@ export function ExamBuilder() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+    if (perSet <= 0) {
+      setError('Each exam needs at least one question per set.');
+      return;
+    }
     try {
       const { data } = await api.post('/exams', {
         ...form,

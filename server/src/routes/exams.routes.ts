@@ -8,18 +8,23 @@ import { buildPaperPdf } from '../services/pdf';
 
 const router = Router();
 
-const createSchema = z.object({
-  title: z.string().min(2),
-  mode: z.nativeEnum(ExamMode),
-  examDate: z.string().datetime(),
-  leadTimeHours: z.number().int().min(0).max(720).default(12),
-  numberOfSets: z.number().int().min(1),
-  easyPerSet: z.number().int().min(0),
-  mediumPerSet: z.number().int().min(0),
-  hardPerSet: z.number().int().min(0),
-  durationMinutes: z.number().int().min(1).default(60),
-  instructions: z.string().optional(),
-});
+const createSchema = z
+  .object({
+    title: z.string().min(2),
+    mode: z.nativeEnum(ExamMode),
+    examDate: z.string().datetime(),
+    leadTimeHours: z.number().int().min(0).max(720).default(12),
+    numberOfSets: z.number().int().min(1),
+    easyPerSet: z.number().int().min(0),
+    mediumPerSet: z.number().int().min(0),
+    hardPerSet: z.number().int().min(0),
+    durationMinutes: z.number().int().min(1).default(60),
+    instructions: z.string().optional(),
+  })
+  .refine((exam) => exam.easyPerSet + exam.mediumPerSet + exam.hardPerSet > 0, {
+    path: ['easyPerSet'],
+    message: 'Each exam needs at least one question per set',
+  });
 
 router.use(authenticate);
 
@@ -57,7 +62,13 @@ router.post('/', authorize(Role.ADMIN, Role.EXAMINER), async (req, res) => {
 router.get('/', authorize(Role.ADMIN, Role.EXAMINER, Role.PROCTOR), async (_req, res) => {
   const exams = await prisma.exam.findMany({
     orderBy: { examDate: 'asc' },
-    include: { _count: { select: { papers: true, attempts: true } } },
+    include: {
+      _count: { select: { papers: true, attempts: true } },
+      papers: {
+        select: { id: true, setLabel: true, totalWeight: true, generatedAt: true },
+        orderBy: { setLabel: 'asc' },
+      },
+    },
   });
   res.json(exams);
 });
