@@ -56,4 +56,4 @@ Exam Shield supports two examination modes:
 
 ## Status
 
-🚧 Under active development by the Exam Shield team.
+🚧 Under active development by the Yatharth Team.
