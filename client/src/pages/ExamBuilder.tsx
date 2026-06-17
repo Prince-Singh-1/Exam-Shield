@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Button, Card, Field, inputClass } from '../components/ui';
+import { ExamQuestionCollector } from '../components/ExamQuestionCollector';
 
 export function ExamBuilder() {
   const nav = useNavigate();
@@ -11,6 +12,7 @@ export function ExamBuilder() {
     examDate: '',
     leadTimeHours: 12,
     numberOfSets: 4,
+    questionsPerSet: 20,
     easyPerSet: 10,
     mediumPerSet: 6,
     hardPerSet: 4,
@@ -31,6 +33,10 @@ export function ExamBuilder() {
     setError('');
     if (perSet <= 0) {
       setError('Each exam needs at least one question per set.');
+      return;
+    }
+    if (perSet !== form.questionsPerSet) {
+      setError('Easy, medium, and hard counts must add up to the questions per set value.');
       return;
     }
     try {
@@ -66,9 +72,13 @@ export function ExamBuilder() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-10">
+    <div className="mx-auto max-w-4xl space-y-6 px-6 py-10">
       <Card>
         <h1 className="font-serif text-2xl font-bold text-sakura-600">Create exam</h1>
+        <p className="mt-2 text-sm text-ink/60">
+          Tell Exam Shield how many questions each set should contain, split them by difficulty,
+          then enter the actual questions below.
+        </p>
         <form onSubmit={submit} className="mt-5 space-y-4">
           <Field label="Title">
             <input className={inputClass} value={form.title} onChange={(e) => set('title', e.target.value)} required />
@@ -104,16 +114,43 @@ export function ExamBuilder() {
           </div>
 
           <div className="rounded-xl bg-sakura-50/60 p-4">
-            <p className="mb-3 text-sm font-medium text-ink/70">Questions per set, by difficulty</p>
-            <div className="grid grid-cols-3 gap-3">
+            <p className="mb-3 text-sm font-medium text-ink/70">Questions per set</p>
+            <div className="grid gap-4 md:grid-cols-4">
+              <Field label="Total questions per set">
+                <input
+                  className={inputClass}
+                  type="number"
+                  min={1}
+                  value={form.questionsPerSet}
+                  onChange={num('questionsPerSet')}
+                />
+              </Field>
               <Field label="Easy"><input className={inputClass} type="number" min={0} value={form.easyPerSet} onChange={num('easyPerSet')} /></Field>
               <Field label="Medium"><input className={inputClass} type="number" min={0} value={form.mediumPerSet} onChange={num('mediumPerSet')} /></Field>
               <Field label="Hard"><input className={inputClass} type="number" min={0} value={form.hardPerSet} onChange={num('hardPerSet')} /></Field>
             </div>
-            <p className="mt-3 text-xs text-ink/60">
-              {perSet} questions/set · difficulty weight per set: <b>{weight}</b> (identical across all sets → balanced)
-            </p>
+            <div className="mt-3 flex flex-col gap-1 text-xs text-ink/60">
+              <p>
+                Current split: <b>{perSet}</b> / {form.questionsPerSet} questions per set.
+              </p>
+              <p>
+                Difficulty weight per set: <b>{weight}</b>.
+              </p>
+              {perSet !== form.questionsPerSet && (
+                <p className="text-sakura-600">
+                  The easy, medium, and hard counts need to add up exactly to the total questions per set.
+                </p>
+              )}
+            </div>
           </div>
+
+          <ExamQuestionCollector
+            mode={form.mode}
+            numberOfSets={form.numberOfSets}
+            easyPerSet={form.easyPerSet}
+            mediumPerSet={form.mediumPerSet}
+            hardPerSet={form.hardPerSet}
+          />
 
           <Field label="Instructions (printed/shown before exam)">
             <textarea className={inputClass} rows={4} value={form.instructions} onChange={(e) => set('instructions', e.target.value)} />
