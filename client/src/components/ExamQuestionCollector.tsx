@@ -10,6 +10,7 @@ interface Props {
   easyPerSet: number;
   mediumPerSet: number;
   hardPerSet: number;
+  onCountsChange?: (counts: Counts) => void;
 }
 
 interface QuestionDraft {
@@ -47,6 +48,7 @@ export function ExamQuestionCollector({
   easyPerSet,
   mediumPerSet,
   hardPerSet,
+  onCountsChange,
 }: Props) {
   const [drafts, setDrafts] = useState<Drafts>(EMPTY_DRAFTS);
   const [counts, setCounts] = useState<Counts>(EMPTY_COUNTS);
@@ -73,6 +75,7 @@ export function ExamQuestionCollector({
       nextCounts[item.difficulty] = item._count;
     });
     setCounts(nextCounts);
+    onCountsChange?.(nextCounts);
   }
 
   useEffect(() => {

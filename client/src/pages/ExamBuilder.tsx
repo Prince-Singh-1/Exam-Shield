@@ -4,6 +4,11 @@ import { api } from '../lib/api';
 import { Button, Card, Field, inputClass } from '../components/ui';
 import { ExamQuestionCollector } from '../components/ExamQuestionCollector';
 
+type Difficulty = 'EASY' | 'MEDIUM' | 'HARD';
+type Counts = Record<Difficulty, number>;
+
+const EMPTY_COUNTS: Counts = { EASY: 0, MEDIUM: 0, HARD: 0 };
+
 export function ExamBuilder() {
   const nav = useNavigate();
   const [form, setForm] = useState({
@@ -22,9 +27,19 @@ export function ExamBuilder() {
   });
   const [error, setError] = useState('');
   const [created, setCreated] = useState<any>(null);
+  const [bankCounts, setBankCounts] = useState<Counts>(EMPTY_COUNTS);
 
   const perSet = form.easyPerSet + form.mediumPerSet + form.hardPerSet;
   const weight = form.easyPerSet * 1 + form.mediumPerSet * 2 + form.hardPerSet * 3;
+  const requiredMultiplier = form.mode === 'OFFLINE' ? form.numberOfSets : 1;
+  const requiredCounts: Counts = {
+    EASY: form.easyPerSet * requiredMultiplier,
+    MEDIUM: form.mediumPerSet * requiredMultiplier,
+    HARD: form.hardPerSet * requiredMultiplier,
+  };
+  const shortfalls = (Object.keys(requiredCounts) as Difficulty[]).filter(
+    (difficulty) => bankCounts[difficulty] < requiredCounts[difficulty],
+  );
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
   const num = (k: string) => (e: any) => set(k, Number(e.target.value));
 
@@ -37,6 +52,14 @@ export function ExamBuilder() {
     }
     if (perSet !== form.questionsPerSet) {
       setError('Easy, medium, and hard counts must add up to the questions per set value.');
+      return;
+    }
+    if (shortfalls.length > 0) {
+      setError(
+        shortfalls
+          .map((difficulty) => `Need ${requiredCounts[difficulty]} ${difficulty} questions, have ${bankCounts[difficulty]}.`)
+          .join(' '),
+      );
       return;
     }
     try {
@@ -150,7 +173,32 @@ export function ExamBuilder() {
             easyPerSet={form.easyPerSet}
             mediumPerSet={form.mediumPerSet}
             hardPerSet={form.hardPerSet}
+            onCountsChange={setBankCounts}
           />
+
+          <div className="rounded-xl border border-sakura-100 bg-white/70 p-4">
+            <p className="text-sm font-semibold text-ink/70">Question bank readiness</p>
+            <div className="mt-3 grid gap-2 md:grid-cols-3">
+              {(['EASY', 'MEDIUM', 'HARD'] as Difficulty[]).map((difficulty) => {
+                const ready = bankCounts[difficulty] >= requiredCounts[difficulty];
+                return (
+                  <div
+                    key={difficulty}
+                    className={`rounded-lg px-3 py-2 text-sm ${
+                      ready ? 'bg-green-50 text-green-800' : 'bg-sakura-50 text-sakura-600'
+                    }`}
+                  >
+                    {difficulty}: {bankCounts[difficulty]} saved / {requiredCounts[difficulty]} needed
+                  </div>
+                );
+              })}
+            </div>
+            {shortfalls.length > 0 && (
+              <p className="mt-3 text-xs text-sakura-600">
+                Save enough questions in each difficulty before creating the exam.
+              </p>
+            )}
+          </div>
 
           <Field label="Instructions (printed/shown before exam)">
             <textarea className={inputClass} rows={4} value={form.instructions} onChange={(e) => set('instructions', e.target.value)} />
@@ -158,7 +206,9 @@ export function ExamBuilder() {
 
           {error && <p className="text-sm text-sakura-600">{error}</p>}
           <div className="flex gap-3">
-            <Button type="submit">Create exam</Button>
+            <Button type="submit" disabled={perSet !== form.questionsPerSet || shortfalls.length > 0}>
+              Create exam
+            </Button>
             <button type="button" onClick={() => nav('/dashboard')} className="text-sm text-ink/60 underline">Cancel</button>
           </div>
         </form>
