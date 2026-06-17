@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { ExamMode, ExamStatus, Role } from '@prisma/client';
+import { Difficulty, ExamMode, ExamStatus, Role } from '@prisma/client';
 import { prisma } from '../prisma';
 import { authenticate, authorize } from '../middleware/auth';
 import { generateExamPapers } from '../services/examService';
@@ -28,11 +28,66 @@ const createSchema = z
 
 router.use(authenticate);
 
+async function getBankShortfalls(input: {
+  mode: ExamMode;
+  numberOfSets: number;
+  easyPerSet: number;
+  mediumPerSet: number;
+  hardPerSet: number;
+}) {
+  const multiplier = input.mode === ExamMode.OFFLINE ? input.numberOfSets : 1;
+  const required: Record<Difficulty, number> = {
+    EASY: input.easyPerSet * multiplier,
+    MEDIUM: input.mediumPerSet * multiplier,
+    HARD: input.hardPerSet * multiplier,
+  };
+  const counts = await prisma.question.groupBy({ by: ['difficulty'], _count: true });
+  const available: Record<Difficulty, number> = { EASY: 0, MEDIUM: 0, HARD: 0 };
+  counts.forEach((item) => {
+    available[item.difficulty] = item._count;
+  });
+
+  return (Object.keys(required) as Difficulty[])
+    .filter((difficulty) => available[difficulty] < required[difficulty])
+    .map((difficulty) => ({
+      difficulty,
+      required: required[difficulty],
+      available: available[difficulty],
+    }));
+}
+
 // Create an exam config (online or offline).
 router.post('/', authorize(Role.ADMIN, Role.EXAMINER), async (req, res) => {
   const parsed = createSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const d = parsed.data;
+  const d = parsed.data as {
+    title: string;
+    mode: ExamMode;
+    examDate: string;
+    leadTimeHours: number;
+    numberOfSets: number;
+    easyPerSet: number;
+    mediumPerSet: number;
+    hardPerSet: number;
+    durationMinutes: number;
+    instructions?: string;
+  };
+  const shortfalls = await getBankShortfalls({
+    mode: d.mode,
+    numberOfSets: d.numberOfSets,
+    easyPerSet: d.easyPerSet,
+    mediumPerSet: d.mediumPerSet,
+    hardPerSet: d.hardPerSet,
+  });
+  if (shortfalls.length > 0) {
+    return res.status(400).json({
+      error: shortfalls
+        .map((item) => `Question bank too small: need ${item.required} ${item.difficulty} questions, have ${item.available}.`)
+        .join(' '),
+      shortfalls,
+    });
+  }
+
   const examDate = new Date(d.examDate);
   const questionsPerSet = d.easyPerSet + d.mediumPerSet + d.hardPerSet;
   const generateAt =
@@ -56,6 +111,12 @@ router.post('/', authorize(Role.ADMIN, Role.EXAMINER), async (req, res) => {
       createdById: req.user!.sub,
     },
   });
+
+  if (d.mode === ExamMode.OFFLINE && generateAt && generateAt <= new Date()) {
+    const generation = await generateExamPapers(exam.id, req.user!.sub);
+    return res.status(201).json({ ...exam, generation });
+  }
+
   res.status(201).json(exam);
 });
 
