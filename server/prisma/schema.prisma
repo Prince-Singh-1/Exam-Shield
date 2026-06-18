@@ -55,12 +55,15 @@ enum ViolationType {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  name         String
-  passwordHash String
-  role         Role
-  createdAt    DateTime @default(now())
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String
+  passwordHash   String
+  role           Role
+  isEmailVerified Boolean  @default(false)
+  otp            String?
+  otpExpiresAt   DateTime?
+  createdAt      DateTime  @default(now())
 
   createdExams     Exam[]            @relation("ExamCreator")
   generatedPapers  GeneratedPaper[]  @relation("PaperGenerator")

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { Role } from '@prisma/client';
 import { prisma } from '../prisma';
 import { signToken, authenticate } from '../middleware/auth';
+import { sendOtpEmail } from '../utils/email';
 
 const router = Router();
 
@@ -18,6 +19,12 @@ const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
   // Students may only authenticate for ONLINE exams.
+  mode: z.enum(['ONLINE', 'OFFLINE']).optional(),
+});
+
+const verifyOtpSchema = z.object({
+  email: z.string().email(),
+  otp: z.string().length(6),
   mode: z.enum(['ONLINE', 'OFFLINE']).optional(),
 });
 
@@ -57,6 +64,64 @@ router.post('/login', async (req, res) => {
   if (user.role === Role.STUDENT && mode === 'OFFLINE') {
     return res.status(403).json({ error: 'Students cannot log in for offline exams' });
   }
+
+  if (!user.isEmailVerified) {
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { otp, otpExpiresAt },
+    });
+
+    await sendOtpEmail(user.email, otp);
+
+    return res.status(403).json({
+      error: 'Email not verified',
+      requiresVerification: true,
+    });
+  }
+
+  const token = signToken({ sub: user.id, role: user.role, email: user.email, name: user.name });
+  return res.json({
+    token,
+    user: { id: user.id, email: user.email, name: user.name, role: user.role },
+  });
+});
+
+router.post('/verify-otp', async (req, res) => {
+  const parsed = verifyOtpSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const { email, otp, mode } = parsed.data;
+
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) {
+    return res.status(400).json({ error: 'User not found' });
+  }
+
+  if (user.role === Role.STUDENT && mode === 'OFFLINE') {
+    return res.status(403).json({ error: 'Students cannot log in for offline exams' });
+  }
+
+  if (!user.otp || user.otp !== otp) {
+    return res.status(400).json({ error: 'Invalid OTP' });
+  }
+
+  if (!user.otpExpiresAt || user.otpExpiresAt < new Date()) {
+    return res.status(400).json({ error: 'OTP has expired' });
+  }
+
+  // OTP is valid, mark as verified and clear OTP fields
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      isEmailVerified: true,
+      otp: null,
+      otpExpiresAt: null,
+    },
+  });
 
   const token = signToken({ sub: user.id, role: user.role, email: user.email, name: user.name });
   return res.json({

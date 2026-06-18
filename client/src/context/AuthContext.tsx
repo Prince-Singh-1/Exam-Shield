@@ -3,8 +3,9 @@ import { api, AuthUser, Role } from '../lib/api';
 
 interface AuthCtx {
   user: AuthUser | null;
-  login: (email: string, password: string, mode?: 'ONLINE' | 'OFFLINE') => Promise<AuthUser>;
-  register: (input: { name: string; email: string; password: string; role: Role }) => Promise<AuthUser>;
+  login: (email: string, password: string, mode?: 'ONLINE' | 'OFFLINE') => Promise<AuthUser | { requiresVerification: true }>;
+  verifyOtp: (email: string, otp: string, mode?: 'ONLINE' | 'OFFLINE') => Promise<AuthUser>;
+  register: (input: { name: string; email: string; password: string; role: Role }) => Promise<AuthUser | { requiresVerification: true }>;
   logout: () => void;
 }
 
@@ -24,7 +25,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   async function login(email: string, password: string, mode?: 'ONLINE' | 'OFFLINE') {
-    const { data } = await api.post('/auth/login', { email, password, mode });
+    try {
+      const { data } = await api.post('/auth/login', { email, password, mode });
+      localStorage.setItem('es_token', data.token);
+      localStorage.setItem('es_user', JSON.stringify(data.user));
+      setUser(data.user);
+      return data.user as AuthUser;
+    } catch (err: any) {
+      if (err.response?.status === 403 && err.response?.data?.requiresVerification) {
+        return { requiresVerification: true as const };
+      }
+      throw err;
+    }
+  }
+
+  async function verifyOtp(email: string, otp: string, mode?: 'ONLINE' | 'OFFLINE') {
+    const { data } = await api.post('/auth/verify-otp', { email, otp, mode });
     localStorage.setItem('es_token', data.token);
     localStorage.setItem('es_user', JSON.stringify(data.user));
     setUser(data.user);
@@ -43,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }
 
-  return <Ctx.Provider value={{ user, login, register, logout }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ user, login, verifyOtp, register, logout }}>{children}</Ctx.Provider>;
 }
 
 export const useAuth = () => useContext(Ctx);

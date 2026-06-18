@@ -4,10 +4,12 @@ import { useAuth } from '../context/AuthContext';
 import { Button, Card, Field, inputClass } from '../components/ui';
 
 export function Login() {
-  const { login } = useAuth();
+  const { login, verifyOtp } = useAuth();
   const nav = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState('');
+  const [otpStep, setOtpStep] = useState(false);
   const [mode, setMode] = useState<'ONLINE' | 'OFFLINE'>('ONLINE');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -17,10 +19,19 @@ export function Login() {
     setError('');
     setLoading(true);
     try {
-      const user = await login(email, password, mode);
-      nav(user.role === 'PROCTOR' ? '/proctor' : '/dashboard');
+      if (otpStep) {
+        const user = await verifyOtp(email, otp, mode);
+        nav(user.role === 'PROCTOR' ? '/proctor' : '/dashboard');
+      } else {
+        const res = await login(email, password, mode);
+        if ('requiresVerification' in res) {
+          setOtpStep(true);
+        } else {
+          nav(res.role === 'PROCTOR' ? '/proctor' : '/dashboard');
+        }
+      }
     } catch (err: any) {
-      setError(err?.response?.data?.error ?? 'Login failed');
+      setError(err?.response?.data?.error ?? (otpStep ? 'Verification failed' : 'Login failed'));
     } finally {
       setLoading(false);
     }
@@ -52,14 +63,23 @@ export function Login() {
         </p>
 
         <form onSubmit={submit} className="mt-5 space-y-4">
-          <Field label="Email">
-            <input className={inputClass} type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          </Field>
-          <Field label="Password">
-            <input className={inputClass} type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-          </Field>
+          {!otpStep ? (
+            <>
+              <Field label="Email">
+                <input className={inputClass} type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              </Field>
+              <Field label="Password">
+                <input className={inputClass} type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              </Field>
+            </>
+          ) : (
+            <Field label="One-Time Password">
+              <p className="mb-2 text-xs text-ink/60">An OTP was sent to your email. Please enter it below to verify your account.</p>
+              <input className={inputClass} type="text" placeholder="123456" value={otp} onChange={(e) => setOtp(e.target.value)} required maxLength={6} />
+            </Field>
+          )}
           {error && <p className="text-sm text-sakura-600">{error}</p>}
-          <Button className="w-full" disabled={loading}>{loading ? 'Signing in...' : 'Sign in'}</Button>
+          <Button className="w-full" disabled={loading}>{loading ? 'Please wait...' : otpStep ? 'Verify OTP' : 'Sign in'}</Button>
         </form>
 
         <p className="mt-5 text-center text-sm text-ink/60">
