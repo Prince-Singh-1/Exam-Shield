@@ -59,6 +59,25 @@ export function Dashboard() {
     }
   }
 
+  async function deleteExam(exam: Exam) {
+    const confirmed = window.confirm(
+      `Delete "${exam.title}"? Generated papers, student attempts, and proctoring records for this exam will also be deleted.`,
+    );
+    if (!confirmed) return;
+
+    setMessage('');
+    setBusyExamId(exam.id);
+    try {
+      await api.delete(`/exams/${exam.id}`);
+      setExams((current) => current.filter((item) => item.id !== exam.id));
+      setMessage(`Deleted "${exam.title}".`);
+    } catch (err: any) {
+      setMessage(err?.response?.data?.error ?? 'Could not delete exam.');
+    } finally {
+      setBusyExamId('');
+    }
+  }
+
   async function downloadPdf(exam: Exam, paper: Paper) {
     setMessage('');
     setBusyExamId(exam.id);
@@ -139,6 +158,14 @@ export function Dashboard() {
                       {busyExamId === ex.id ? 'Working...' : 'Generate now'}
                     </Button>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => deleteExam(ex)}
+                    disabled={busyExamId === ex.id}
+                    className="rounded-xl border border-red-300 bg-white px-4 py-2.5 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                  >
+                    Delete exam
+                  </button>
                 </div>
               )}
               </div>

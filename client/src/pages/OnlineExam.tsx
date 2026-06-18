@@ -26,6 +26,9 @@ export function OnlineExam() {
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [violations, setViolations] = useState(0);
   const [score, setScore] = useState<number | null>(null);
+  const [totalMcq, setTotalMcq] = useState(0);
+  const [answeredCount, setAnsweredCount] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const attemptRef = useRef('');
 
@@ -44,7 +47,7 @@ export function OnlineExam() {
   }, []);
 
   useExamLockdown(running, (type, detail) => report(type, detail));
-  const { videoRef, canvasRef, status } = useProctoring(running, report);
+  const { videoRef, canvasRef, status, aiStatus, errorMessage: mediaError } = useProctoring(running, report);
 
   // Timer
   useEffect(() => {
@@ -83,12 +86,21 @@ export function OnlineExam() {
   }
 
   async function submit() {
+    if (submitting || !attemptRef.current) return;
+    setSubmitting(true);
+    setError('');
     try {
       const { data } = await api.post(`/attempts/${attemptRef.current}/submit`, { answers });
       setScore(data.score);
-    } catch { /* ignore */ }
-    document.exitFullscreen?.().catch(() => undefined);
-    setPhase('submitted');
+      setTotalMcq(data.totalMcq ?? 0);
+      setAnsweredCount(data.answeredCount ?? Object.keys(answers).length);
+      document.exitFullscreen?.().catch(() => undefined);
+      setPhase('submitted');
+    } catch (err: any) {
+      setError(err?.response?.data?.error ?? 'Could not submit the exam. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   if (phase === 'instructions') {
@@ -124,7 +136,12 @@ export function OnlineExam() {
         <Card className="text-center">
           <div className="text-4xl">🌸</div>
           <h1 className="mt-3 font-serif text-2xl font-bold text-sakura-600">Exam submitted</h1>
-          {score !== null && <p className="mt-2 text-ink/70">Auto-graded MCQ score: <b>{score}</b></p>}
+          {score !== null && (
+            <p className="mt-2 text-lg text-ink/70">
+              Auto-graded MCQ score: <b>{score} / {totalMcq}</b>
+            </p>
+          )}
+          <p className="mt-1 text-sm text-ink/60">{answeredCount} answers submitted.</p>
           <p className="mt-2 text-sm text-ink/60">{violations} proctoring events were recorded.</p>
           <Button className="mt-5" onClick={() => nav('/dashboard')}>Back to dashboard</Button>
         </Card>
@@ -144,11 +161,20 @@ export function OnlineExam() {
           <canvas ref={canvasRef} className="hidden" />
           <div className="text-xs">
             <p className="font-medium">AI Proctor: <span className={status === 'running' ? 'text-green-600' : 'text-sakura-600'}>{status}</span></p>
-            <p className="text-ink/50">{violations} events</p>
+            <p className="text-ink/50">
+              {status === 'running' ? 'Camera and microphone active' : 'Waiting for camera and microphone'}
+            </p>
+            <p className="text-ink/50">AI detection: {aiStatus} - {violations} events</p>
           </div>
         </div>
         <div className="font-mono text-lg font-bold text-sakura-600">⏱ {mm}:{ss}</div>
       </div>
+
+      {(mediaError || error) && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {mediaError || error}
+        </div>
+      )}
 
       <div className="space-y-4">
         {questions.map((q, i) => (
@@ -176,7 +202,9 @@ export function OnlineExam() {
       </div>
 
       <div className="sticky bottom-0 mt-4 flex justify-end rounded-2xl glass px-4 py-3">
-        <Button onClick={submit}>Submit exam</Button>
+        <Button onClick={submit} disabled={submitting}>
+          {submitting ? 'Submitting...' : 'Submit exam'}
+        </Button>
       </div>
     </div>
   );

@@ -143,6 +143,17 @@ router.get('/:id', authorize(Role.ADMIN, Role.EXAMINER, Role.PROCTOR), async (re
   res.json(exam);
 });
 
+router.delete('/:id', authorize(Role.ADMIN, Role.EXAMINER), async (req, res) => {
+  const exam = await prisma.exam.findUnique({
+    where: { id: req.params.id },
+    select: { id: true },
+  });
+  if (!exam) return res.status(404).json({ error: 'Exam not found' });
+
+  await prisma.exam.delete({ where: { id: exam.id } });
+  return res.status(204).end();
+});
+
 // Manually trigger generation (also runs automatically via scheduler for offline).
 router.post('/:id/generate', authorize(Role.ADMIN, Role.EXAMINER), async (req, res) => {
   try {

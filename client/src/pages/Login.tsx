@@ -29,6 +29,7 @@ export function Login() {
   return (
     <div className="mx-auto flex min-h-screen max-w-md items-center px-6">
       <Card className="w-full">
+        <Link to="/" className="mb-4 inline-block text-sm text-ink/60 underline">Back to home</Link>
         <h1 className="font-serif text-3xl font-bold text-sakura-600">Welcome back</h1>
         <p className="mt-1 text-sm text-ink/60">Sign in to Exam Shield</p>
 
@@ -42,12 +43,12 @@ export function Login() {
                 mode === m ? 'bg-white text-sakura-600 shadow' : 'text-ink/50'
               }`}
             >
-              {m === 'ONLINE' ? '🟢 Online' : '📄 Offline'}
+              {m === 'ONLINE' ? 'Online' : 'Offline'}
             </button>
           ))}
         </div>
         <p className="mt-2 text-xs text-ink/50">
-          Note: students can only sign in for online exams. Offline exams are physical.
+          Students can only sign in for online exams. Offline exams are physical.
         </p>
 
         <form onSubmit={submit} className="mt-5 space-y-4">
@@ -58,17 +59,12 @@ export function Login() {
             <input className={inputClass} type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
           </Field>
           {error && <p className="text-sm text-sakura-600">{error}</p>}
-          <Button className="w-full" disabled={loading}>{loading ? 'Signing in…' : 'Sign in'}</Button>
+          <Button className="w-full" disabled={loading}>{loading ? 'Signing in...' : 'Sign in'}</Button>
         </form>
 
         <p className="mt-5 text-center text-sm text-ink/60">
           New to Exam Shield? <Link to="/signup" className="font-medium text-sakura-600 underline">Create an account</Link>
         </p>
-
-        <div className="mt-4 rounded-xl bg-sakura-50/60 p-3 text-xs text-ink/60">
-          <p className="font-medium">Demo accounts (password: <code>password123</code>)</p>
-          <p>admin@ · examiner@ · proctor@ · student@ — examshield.dev</p>
-        </div>
       </Card>
     </div>
   );
