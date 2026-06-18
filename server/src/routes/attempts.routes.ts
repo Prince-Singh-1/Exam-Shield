@@ -110,19 +110,36 @@ router.post('/:attemptId/submit', authorize(Role.STUDENT), async (req, res) => {
     return res.status(404).json({ error: 'Attempt not found' });
   }
 
-  // Auto-grade MCQs server-side.
-  const ids = Object.keys(parsed.data.answers);
-  const questions = await prisma.question.findMany({ where: { id: { in: ids } } });
+  const saved = attempt.answers as { questionIds?: string[] } | null;
+  const questionIds =
+    Array.isArray(saved?.questionIds) && saved.questionIds.length > 0
+      ? saved.questionIds
+      : Object.keys(parsed.data.answers);
+  const questions = await prisma.question.findMany({ where: { id: { in: questionIds } } });
+  const assignedIds = new Set(questionIds);
+  const submittedAnswers = Object.fromEntries(
+    Object.entries(parsed.data.answers).filter(([questionId]) => assignedIds.has(questionId)),
+  );
+
+  // Auto-grade only MCQs assigned to this attempt.
   let score = 0;
   for (const q of questions) {
-    if (q.type === 'MCQ' && q.correctKey && parsed.data.answers[q.id] === q.correctKey) score++;
+    if (q.type === 'MCQ' && q.correctKey && submittedAnswers[q.id] === q.correctKey) score++;
   }
+  const totalMcq = questions.filter((question) => question.type === 'MCQ').length;
+  const answeredCount = Object.keys(submittedAnswers).length;
 
   const updated = await prisma.attempt.update({
     where: { id: attempt.id },
-    data: { submittedAt: new Date(), answers: parsed.data.answers, score },
+    data: { submittedAt: new Date(), answers: submittedAnswers, score },
   });
-  res.json({ submittedAt: updated.submittedAt, score });
+  res.json({
+    submittedAt: updated.submittedAt,
+    score,
+    totalMcq,
+    totalQuestions: questionIds.length,
+    answeredCount,
+  });
 });
 
 export default router;

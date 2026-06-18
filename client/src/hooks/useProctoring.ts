@@ -17,7 +17,9 @@ type Report = (type: string, detail: string, capture?: Blob | null) => void;
 export function useProctoring(active: boolean, report: Report) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [status, setStatus] = useState<'idle' | 'loading' | 'running' | 'error'>('idle');
+  const [status, setStatus] = useState<'idle' | 'requesting' | 'running' | 'error'>('idle');
+  const [aiStatus, setAiStatus] = useState<'idle' | 'loading' | 'running' | 'unavailable'>('idle');
+  const [errorMessage, setErrorMessage] = useState('');
   const lastFired = useRef<Record<string, number>>({});
 
   function throttle(key: string, ms = 6000) {
@@ -51,8 +53,13 @@ export function useProctoring(active: boolean, report: Report) {
   }
 
   useEffect(() => {
-    if (!active) return;
-    let raf = 0;
+    if (!active) {
+      setStatus('idle');
+      setAiStatus('idle');
+      setErrorMessage('');
+      return;
+    }
+    let loopTimer = 0;
     let stream: MediaStream | null = null;
     let audioCtx: AudioContext | null = null;
     let cancelled = false;
@@ -61,15 +68,16 @@ export function useProctoring(active: boolean, report: Report) {
 
     async function start() {
       try {
-        setStatus('loading');
-        await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js');
-        await loadScript(
-          'https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js',
-        );
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        model = await (window as any).cocoSsd.load();
-
+        setStatus('requesting');
+        setErrorMessage('');
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error('Camera and microphone access is not supported in this browser.');
+        }
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play().catch(() => undefined);
@@ -83,7 +91,28 @@ export function useProctoring(active: boolean, report: Report) {
         source.connect(analyser);
         const buf = new Uint8Array(analyser.frequencyBinCount);
 
+        if (audioCtx.state === 'suspended') {
+          await audioCtx.resume().catch(() => undefined);
+        }
         setStatus('running');
+
+        setAiStatus('loading');
+        Promise.resolve()
+          .then(() => loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js'))
+          .then(() =>
+            loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js'),
+          )
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .then(() => (window as any).cocoSsd.load())
+          .then((loadedModel) => {
+            if (cancelled) return;
+            model = loadedModel;
+            setAiStatus('running');
+          })
+          .catch((error) => {
+            console.error(error);
+            if (!cancelled) setAiStatus('unavailable');
+          });
 
         const loop = async () => {
           if (cancelled) return;
@@ -111,24 +140,32 @@ export function useProctoring(active: boolean, report: Report) {
               report('NO_FACE', 'No person detected (looking away?)', await snapshot());
             }
           }
-          raf = requestAnimationFrame(() => setTimeout(loop, 1200) as unknown as number);
+          loopTimer = window.setTimeout(loop, 1200);
         };
         loop();
       } catch (e) {
         // eslint-disable-next-line no-console
         console.error(e);
+        const message =
+          e instanceof DOMException && e.name === 'NotAllowedError'
+            ? 'Camera and microphone permission was denied. Allow both permissions, then restart the exam.'
+            : e instanceof Error
+              ? e.message
+              : 'Could not start camera and microphone.';
+        setErrorMessage(message);
         setStatus('error');
+        setAiStatus('unavailable');
       }
     }
 
     start();
     return () => {
       cancelled = true;
-      cancelAnimationFrame(raf);
+      window.clearTimeout(loopTimer);
       stream?.getTracks().forEach((t) => t.stop());
       audioCtx?.close().catch(() => undefined);
     };
   }, [active, report]);
 
-  return { videoRef, canvasRef, status };
+  return { videoRef, canvasRef, status, aiStatus, errorMessage };
 }

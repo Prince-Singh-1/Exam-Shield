@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, ReactNode } from 'react';
 import { api, AuthUser, Role } from '../lib/api';
 
 interface AuthCtx {
@@ -11,12 +11,17 @@ interface AuthCtx {
 const Ctx = createContext<AuthCtx>(null!);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
-
-  useEffect(() => {
+  const [user, setUser] = useState<AuthUser | null>(() => {
     const raw = localStorage.getItem('es_user');
-    if (raw) setUser(JSON.parse(raw));
-  }, []);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as AuthUser;
+    } catch {
+      localStorage.removeItem('es_user');
+      localStorage.removeItem('es_token');
+      return null;
+    }
+  });
 
   async function login(email: string, password: string, mode?: 'ONLINE' | 'OFFLINE') {
     const { data } = await api.post('/auth/login', { email, password, mode });

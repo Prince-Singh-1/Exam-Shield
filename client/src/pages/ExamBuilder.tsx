@@ -79,7 +79,12 @@ export function ExamBuilder() {
         <Card>
           <h1 className="font-serif text-2xl font-bold text-sakura-600">Exam created ✅</h1>
           <p className="mt-2 text-ink/70">"{created.title}" ({created.mode}) is ready.</p>
-          {created.mode === 'OFFLINE' && created.generateAt && (
+          {created.mode === 'OFFLINE' && created.generation && (
+            <p className="mt-2 text-sm font-medium text-green-700">
+              {created.generation.sets} printable paper set{created.generation.sets === 1 ? '' : 's'} generated successfully.
+            </p>
+          )}
+          {created.mode === 'OFFLINE' && created.generateAt && !created.generation && (
             <p className="mt-2 text-sm text-ink/60">
               Papers will auto-generate at {new Date(created.generateAt).toLocaleString()}
               {' '}({form.leadTimeHours}h before the exam).
@@ -96,6 +101,13 @@ export function ExamBuilder() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-6 py-10">
+      <button
+        type="button"
+        onClick={() => nav('/dashboard')}
+        className="text-sm font-medium text-ink/60 underline"
+      >
+        Back to dashboard
+      </button>
       <Card>
         <h1 className="font-serif text-2xl font-bold text-sakura-600">Create exam</h1>
         <p className="mt-2 text-sm text-ink/60">
