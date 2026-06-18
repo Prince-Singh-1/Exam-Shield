@@ -26,14 +26,8 @@ export function Signup() {
     setError('');
     setLoading(true);
     try {
-      const res = await register({ name, email, password, role });
-      if ('requiresVerification' in res) {
-        // Registration successful but email needs verification. 
-        // Redirecting to login to complete the OTP flow.
-        nav('/login');
-      } else {
-        nav(res.role === 'PROCTOR' ? '/proctor' : '/dashboard');
-      }
+      const user = await register({ name, email, password, role });
+      nav(user.role === 'PROCTOR' ? '/proctor' : '/dashboard');
     } catch (err: any) {
       setError(err?.response?.data?.error ? JSON.stringify(err.response.data.error) : 'Sign up failed');
     } finally {
