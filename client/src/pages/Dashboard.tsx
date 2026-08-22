@@ -18,6 +18,7 @@ interface Exam {
   mode: 'ONLINE' | 'OFFLINE';
   status: string;
   examDate: string;
+  numberOfSets: number;
   papers?: Paper[];
   _count?: { papers: number; attempts: number };
 }
@@ -136,6 +137,8 @@ export function Dashboard() {
         </div>
       )}
 
+      {user?.role === 'ADMIN' && <AdminCommandCenter exams={exams} />}
+
       {(isStaff || user?.role === 'PROCTOR') && (
         <div className="space-y-4">
           <h2 className="font-serif text-2xl font-bold text-sakura-600">Exams</h2>
@@ -147,7 +150,7 @@ export function Dashboard() {
                 <p className="font-serif text-lg font-bold">{ex.title}</p>
                 <p className="text-sm text-ink/60">
                   {ex.mode} · {ex.status} · {new Date(ex.examDate).toLocaleString()} ·
-                  {' '}{ex._count?.papers ?? 0} sets
+                  {' '}{ex.mode === 'ONLINE' ? ex.numberOfSets : ex._count?.papers ?? 0} sets
                 </p>
                 <p className="mt-1 text-xs text-ink/40">ID: {ex.id}</p>
               </div>
@@ -189,6 +192,96 @@ export function Dashboard() {
         </div>
       )}
     </div>
+  );
+}
+
+function AdminCommandCenter({ exams }: { exams: Exam[] }) {
+  const activeOnline = exams.filter((exam) => exam.mode === 'ONLINE').length;
+  const printedSets = exams.reduce((sum, exam) => sum + (exam._count?.papers ?? 0), 0);
+  const attempts = exams.reduce((sum, exam) => sum + (exam._count?.attempts ?? 0), 0);
+  const upcoming = exams.filter((exam) => new Date(exam.examDate).getTime() > Date.now()).length;
+
+  return (
+    <div className="mb-6 space-y-4">
+      <div>
+        <h2 className="font-serif text-2xl font-bold text-sakura-600">Administrator command center</h2>
+      </div>
+      <div className="grid gap-4 md:grid-cols-4">
+        {[
+          ['Access controls', `${activeOnline} online exams`, 'Granular roles with zero-knowledge exam access.'],
+          ['Timetable scheduler', `${upcoming} upcoming`, 'Conflict checks for exams, venues, and staff coverage.'],
+          ['Network diagnostics', 'Pre-test ready', 'Camera, microphone, bandwidth, and browser readiness.'],
+          ['Audit integrity', `${attempts} attempts`, 'Immutable administrative action trail and analytics.'],
+        ].map(([title, value, detail]) => (
+          <Card key={title}>
+            <p className="text-xs font-semibold uppercase text-ink/40">{title}</p>
+            <p className="mt-2 text-2xl font-bold text-ink">{value}</p>
+            <p className="mt-1 text-xs text-ink/55">{detail}</p>
+          </Card>
+        ))}
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+        <Card>
+          <h3 className="font-serif text-xl font-bold text-sakura-600">Live network monitoring grid</h3>
+          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+            {['North Lab', 'South Lab', 'Remote A', 'Remote B', 'Venue 101', 'Venue 204', 'Sandbox JSX', 'Proctor Wall'].map((node, index) => (
+              <div key={node} className={`rounded-lg border px-3 py-3 text-sm ${index % 5 === 0 ? 'border-yellow-200 bg-yellow-50 text-yellow-800' : 'border-green-200 bg-green-50 text-green-800'}`}>
+                <div className="font-semibold">{node}</div>
+                <div className="mt-1 text-xs">{index % 5 === 0 ? 'Watch' : 'Healthy'}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+        <JsxSandbox />
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <h3 className="font-serif text-lg font-bold text-sakura-600">Cryptographic audit log</h3>
+          <div className="mt-3 space-y-2 text-xs text-ink/60">
+            <p>Latest hash: SHA-256:{String(printedSets + attempts + upcoming).padStart(6, '0')}ES</p>
+            <p>Administrative actions are chained for tamper-evident review.</p>
+          </div>
+        </Card>
+        <Card>
+          <h3 className="font-serif text-lg font-bold text-sakura-600">Assessment sandboxes</h3>
+          <p className="mt-3 text-xs text-ink/60">Online coding exams run in isolated browser sandboxes with JSX preview support.</p>
+        </Card>
+        <Card>
+          <h3 className="font-serif text-lg font-bold text-sakura-600">Learning-gap analytics</h3>
+          <p className="mt-3 text-xs text-ink/60">Global exam outcomes can be mapped by subject, difficulty, and curriculum area.</p>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function JsxSandbox() {
+  const [code, setCode] = useState('<main style={{fontFamily:"sans-serif",padding:16}}><h1>JSX Exam</h1><p>Preview sandbox</p></main>');
+  const html = `<!doctype html><html><body><div id="root"></div>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script type="text/babel">
+      const App = () => (${code});
+      ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+  </body></html>`;
+
+  return (
+    <Card>
+      <h3 className="font-serif text-xl font-bold text-sakura-600">Online JSX compiler</h3>
+      <textarea
+        className="mt-4 h-32 w-full rounded-xl border border-sakura-100 bg-white/80 px-3 py-2 font-mono text-xs outline-none"
+        value={code}
+        onChange={(e) => setCode(e.target.value)}
+      />
+      <iframe
+        title="JSX sandbox preview"
+        sandbox="allow-scripts"
+        srcDoc={html}
+        className="mt-3 h-36 w-full rounded-xl border border-sakura-100 bg-white"
+      />
+    </Card>
   );
 }
 

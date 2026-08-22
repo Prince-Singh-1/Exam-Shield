@@ -13,6 +13,21 @@ interface Question {
 }
 
 type Phase = 'instructions' | 'running' | 'submitted';
+type SaveSignal = 'complete' | 'partial' | 'unresolved' | 'blocked';
+
+const saveSignalText: Record<SaveSignal, string> = {
+  complete: 'Saved (COMPLETE)',
+  partial: 'Saving... (PARTIAL)',
+  unresolved: 'Offline (UNRESOLVED)',
+  blocked: 'Blocked (BLOCKED)',
+};
+
+const saveSignalClass: Record<SaveSignal, string> = {
+  complete: 'border-green-200 bg-green-50 text-green-800',
+  partial: 'border-yellow-200 bg-yellow-50 text-yellow-800',
+  unresolved: 'border-orange-200 bg-orange-50 text-orange-800',
+  blocked: 'border-red-200 bg-red-50 text-red-800',
+};
 
 export function OnlineExam() {
   const { examId } = useParams();
@@ -21,16 +36,25 @@ export function OnlineExam() {
   const [attemptId, setAttemptId] = useState<string>('');
   const [questions, setQuestions] = useState<Question[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [studentDetails, setStudentDetails] = useState({ name: '', rollNumber: '', section: '', institution: '' });
+  const [setLabel, setSetLabel] = useState('');
   const [instructions, setInstructions] = useState<string>('');
   const [duration, setDuration] = useState(60);
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [violations, setViolations] = useState(0);
   const [score, setScore] = useState<number | null>(null);
   const [totalMcq, setTotalMcq] = useState(0);
+  const [subjectiveScore, setSubjectiveScore] = useState(0);
+  const [totalSubjective, setTotalSubjective] = useState(0);
   const [answeredCount, setAnsweredCount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveSignal, setSaveSignal] = useState<SaveSignal>('partial');
+  const [lastSavedAt, setLastSavedAt] = useState('');
   const [error, setError] = useState('');
   const attemptRef = useRef('');
+  const answersRef = useRef<Record<string, string>>({});
+  const studentDetailsRef = useRef(studentDetails);
 
   const running = phase === 'running';
 
@@ -49,6 +73,20 @@ export function OnlineExam() {
   useExamLockdown(running, (type, detail) => report(type, detail));
   const { videoRef, canvasRef, status, aiStatus, errorMessage: mediaError } = useProctoring(running, report);
 
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
+
+  useEffect(() => {
+    studentDetailsRef.current = studentDetails;
+  }, [studentDetails]);
+
+  useEffect(() => {
+    if (running && (mediaError || violations >= 5)) {
+      setSaveSignal('blocked');
+    }
+  }, [mediaError, running, violations]);
+
   // Timer
   useEffect(() => {
     if (!running) return;
@@ -64,6 +102,10 @@ export function OnlineExam() {
 
   async function begin() {
     setError('');
+    if (!studentDetails.name.trim() || !studentDetails.rollNumber.trim()) {
+      setError('Enter your name and roll number before starting.');
+      return;
+    }
     try {
       // Paper is assembled NOW — questions were secret until this moment.
       const { data } = await api.post(`/attempts/${examId}/start`);
@@ -75,24 +117,52 @@ export function OnlineExam() {
       setAttemptId(data.attemptId);
       attemptRef.current = data.attemptId;
       setQuestions(loadedQuestions);
-      setAnswers({});
+      setAnswers(data.answers ?? {});
+      setSetLabel(data.setLabel ?? 'Online Set 1');
       setInstructions(data.instructions ?? '');
       setDuration(data.durationMinutes);
       setSecondsLeft(data.durationMinutes * 60);
+      if (data.studentDetails) setStudentDetails((current) => ({ ...current, ...data.studentDetails }));
+      await api.patch(`/attempts/${data.attemptId}/save`, { answers: data.answers ?? {}, studentDetails });
+      setSaveSignal('complete');
+      setLastSavedAt(new Date().toISOString());
       setPhase('running');
     } catch (err: any) {
       setError(err?.response?.data?.error ?? 'Could not start exam');
     }
   }
 
+  useEffect(() => {
+    if (!running || !attemptRef.current) return;
+    if (saveSignal !== 'blocked') setSaveSignal('partial');
+    setSaving(true);
+    const t = window.setTimeout(async () => {
+      try {
+        await api.patch(`/attempts/${attemptRef.current}/save`, {
+          answers: answersRef.current,
+          studentDetails: studentDetailsRef.current,
+        });
+        if (!mediaError && violations < 5) setSaveSignal('complete');
+        setLastSavedAt(new Date().toISOString());
+      } catch {
+        if (saveSignal !== 'blocked') setSaveSignal('unresolved');
+      } finally {
+        setSaving(false);
+      }
+    }, 700);
+    return () => window.clearTimeout(t);
+  }, [answers, running]);
+
   async function submit() {
     if (submitting || !attemptRef.current) return;
     setSubmitting(true);
     setError('');
     try {
-      const { data } = await api.post(`/attempts/${attemptRef.current}/submit`, { answers });
+      const { data } = await api.post(`/attempts/${attemptRef.current}/submit`, { answers, studentDetails });
       setScore(data.score);
       setTotalMcq(data.totalMcq ?? 0);
+      setSubjectiveScore(data.subjectiveScore ?? 0);
+      setTotalSubjective(data.totalSubjective ?? 0);
       setAnsweredCount(data.answeredCount ?? Object.keys(answers).length);
       document.exitFullscreen?.().catch(() => undefined);
       setPhase('submitted');
@@ -120,6 +190,42 @@ export function OnlineExam() {
               {instructions || 'Read all questions carefully. Attempt all questions. For MCQs, select the single best option.'}
             </div>
           </div>
+          <div className="mt-5 grid gap-3 md:grid-cols-2">
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-ink/70">Full name</span>
+              <input
+                className="w-full rounded-xl border border-sakura-200 bg-white/80 px-4 py-2.5 outline-none"
+                value={studentDetails.name}
+                onChange={(e) => setStudentDetails((current) => ({ ...current, name: e.target.value }))}
+                required
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-ink/70">Roll number</span>
+              <input
+                className="w-full rounded-xl border border-sakura-200 bg-white/80 px-4 py-2.5 outline-none"
+                value={studentDetails.rollNumber}
+                onChange={(e) => setStudentDetails((current) => ({ ...current, rollNumber: e.target.value }))}
+                required
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-ink/70">Section</span>
+              <input
+                className="w-full rounded-xl border border-sakura-200 bg-white/80 px-4 py-2.5 outline-none"
+                value={studentDetails.section}
+                onChange={(e) => setStudentDetails((current) => ({ ...current, section: e.target.value }))}
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-ink/70">Institution</span>
+              <input
+                className="w-full rounded-xl border border-sakura-200 bg-white/80 px-4 py-2.5 outline-none"
+                value={studentDetails.institution}
+                onChange={(e) => setStudentDetails((current) => ({ ...current, institution: e.target.value }))}
+              />
+            </label>
+          </div>
           {error && <p className="mt-3 text-sm text-sakura-600">{error}</p>}
           <div className="mt-5 flex gap-3">
             <Button onClick={begin}>I understand — start exam</Button>
@@ -139,6 +245,11 @@ export function OnlineExam() {
           {score !== null && (
             <p className="mt-2 text-lg text-ink/70">
               Auto-graded MCQ score: <b>{score} / {totalMcq}</b>
+            </p>
+          )}
+          {totalSubjective > 0 && (
+            <p className="mt-1 text-sm text-ink/60">
+              Subjective checker estimate: <b>{subjectiveScore} / {totalSubjective}</b>
             </p>
           )}
           <p className="mt-1 text-sm text-ink/60">{answeredCount} answers submitted.</p>
@@ -167,7 +278,18 @@ export function OnlineExam() {
             <p className="text-ink/50">AI detection: {aiStatus} - {violations} events</p>
           </div>
         </div>
-        <div className="font-mono text-lg font-bold text-sakura-600">⏱ {mm}:{ss}</div>
+        <div className="flex flex-col items-end gap-1 text-right">
+          <div className="text-xs font-semibold text-ink/60">{setLabel}</div>
+          <div className="font-mono text-lg font-bold text-sakura-600">⏱ {mm}:{ss}</div>
+        </div>
+      </div>
+
+      <div className={`mb-4 rounded-xl border px-4 py-3 text-sm font-semibold ${saveSignalClass[saveSignal]}`}>
+        {saveSignalText[saveSignal]}
+        {lastSavedAt && saveSignal === 'complete' ? (
+          <span className="ml-2 font-normal">Last saved {new Date(lastSavedAt).toLocaleTimeString()}</span>
+        ) : null}
+        {saving && saveSignal === 'partial' ? <span className="ml-2 font-normal">Syncing answers</span> : null}
       </div>
 
       {(mediaError || error) && (
