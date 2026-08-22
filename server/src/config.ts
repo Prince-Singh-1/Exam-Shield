@@ -18,4 +18,7 @@ export const config = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '12h',
   uploadDir: process.env.UPLOAD_DIR ?? 'uploads',
   captureDir: process.env.CAPTURE_DIR ?? 'captures',
+  googleClientId: process.env.GOOGLE_CLIENT_ID ?? '',
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
+  googleRedirectUri: process.env.GOOGLE_REDIRECT_URI ?? '',
 };

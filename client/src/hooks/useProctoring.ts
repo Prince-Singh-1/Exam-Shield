@@ -62,18 +62,18 @@ export function useProctoring(active: boolean, report: Report) {
     async function start() {
       try {
         setStatus('loading');
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play().catch(() => undefined);
+        }
+
         await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js');
         await loadScript(
           'https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js',
         );
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         model = await (window as any).cocoSsd.load();
-
-        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play().catch(() => undefined);
-        }
 
         // Audio (voice) detection
         audioCtx = new AudioContext();

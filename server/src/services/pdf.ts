@@ -6,6 +6,7 @@ export interface PdfQuestion {
   text: string;
   type: 'MCQ' | 'SUBJECTIVE';
   options?: { id: string; text: string }[] | null;
+  correctKey?: string | null;
 }
 
 export interface PaperPdfData {
@@ -17,6 +18,7 @@ export interface PaperPdfData {
   generatedAt: Date;
   generatedByName: string;
   totalWeight: number;
+  showAnswers?: boolean;
   questions: PdfQuestion[];
 }
 
@@ -67,7 +69,7 @@ export function buildPaperPdf(data: PaperPdfData): Promise<Buffer> {
     doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
     doc.moveDown(0.6);
 
-    // Questions
+    // Questions or answer key
     doc.fontSize(12).font('Helvetica-Bold').text('Questions');
     doc.moveDown(0.4);
     data.questions.forEach((q) => {
@@ -75,10 +77,15 @@ export function buildPaperPdf(data: PaperPdfData): Promise<Buffer> {
       doc.font('Helvetica').text(q.text);
       if (q.type === 'MCQ' && q.options) {
         doc.moveDown(0.1);
-        q.options.forEach((opt, i) => {
-          const letter = String.fromCharCode(65 + i);
-          doc.fontSize(10).text(`    (${letter}) ${opt.text}`);
-        });
+        if (data.showAnswers) {
+          const chosen = q.options.find((opt) => opt.id === q.correctKey);
+          doc.fontSize(10).fillColor('#1f1720').text(`    Answer key: ${chosen ? chosen.text : 'N/A'}`);
+        } else {
+          q.options.forEach((opt, i) => {
+            const letter = String.fromCharCode(65 + i);
+            doc.fontSize(10).text(`    (${letter}) ${opt.text}`);
+          });
+        }
       } else {
         doc.moveDown(1.5);
       }

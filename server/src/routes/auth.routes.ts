@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { Role } from '@prisma/client';
 import { prisma } from '../prisma';
+import { config } from '../config';
 import { signToken, authenticate } from '../middleware/auth';
 
 const router = Router();
@@ -19,6 +20,113 @@ const loginSchema = z.object({
   password: z.string().min(1),
   // Students may only authenticate for ONLINE exams.
   mode: z.enum(['ONLINE', 'OFFLINE']).optional(),
+});
+
+const oauthState: Map<string, { role: Role; createdAt: number }> = new Map();
+
+function oauthRedirectUrl() {
+  const base = config.googleRedirectUri || `${config.clientOrigin}/api/auth/google/callback`;
+  return base;
+}
+
+function makeState(role: Role) {
+  const state = `${role}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2)}`;
+  oauthState.set(state, { role, createdAt: Date.now() });
+  return state;
+}
+
+function consumeState(state: string) {
+  const saved = oauthState.get(state);
+  if (!saved) return null;
+  oauthState.delete(state);
+  if (Date.now() - saved.createdAt > 10 * 60 * 1000) return null;
+  return saved;
+}
+
+router.get('/google/start', async (req, res) => {
+  const role = (String(req.query.role || 'STUDENT').toUpperCase() as Role);
+  if (!Object.values(Role).includes(role)) {
+    return res.status(400).json({ error: 'Invalid role for Google sign-in' });
+  }
+  if (!config.googleClientId || !config.googleClientSecret) {
+    return res.status(500).json({ error: 'Google OAuth is not configured on the server' });
+  }
+  const state = makeState(role);
+  const redirectUri = oauthRedirectUrl();
+  const params = new URLSearchParams({
+    client_id: config.googleClientId,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: 'openid email profile',
+    access_type: 'offline',
+    prompt: 'select_account',
+    state,
+  });
+  return res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+});
+
+router.get('/google/callback', async (req, res) => {
+  const code = typeof req.query.code === 'string' ? req.query.code : '';
+  const state = typeof req.query.state === 'string' ? req.query.state : '';
+  const saved = consumeState(state);
+  if (!code || !saved) {
+    return res.redirect(`${config.clientOrigin}/signup?google=failed`);
+  }
+  if (!config.googleClientId || !config.googleClientSecret) {
+    return res.redirect(`${config.clientOrigin}/signup?google=unavailable`);
+  }
+
+  const redirectUri = oauthRedirectUrl();
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
+      client_id: config.googleClientId,
+      client_secret: config.googleClientSecret,
+      redirect_uri: redirectUri,
+      grant_type: 'authorization_code',
+    }).toString(),
+  });
+  if (!tokenRes.ok) {
+    return res.redirect(`${config.clientOrigin}/signup?google=failed`);
+  }
+  const tokenJson = (await tokenRes.json()) as { access_token?: string };
+  if (!tokenJson.access_token) {
+    return res.redirect(`${config.clientOrigin}/signup?google=failed`);
+  }
+
+  const profileRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+    headers: { Authorization: `Bearer ${tokenJson.access_token}` },
+  });
+  if (!profileRes.ok) {
+    return res.redirect(`${config.clientOrigin}/signup?google=failed`);
+  }
+  const profile = (await profileRes.json()) as { id: string; email: string; name?: string };
+  const email = profile.email;
+  const name = profile.name || email.split('@')[0];
+  const googlePassword = await bcrypt.hash(`google:${profile.id}`, 10);
+
+  const existing = await prisma.user.findUnique({ where: { email } });
+  const user = existing
+    ? await prisma.user.update({
+        where: { email },
+        data: { name, role: existing.role ?? saved.role },
+      })
+    : await prisma.user.create({
+        data: {
+          email,
+          name,
+          passwordHash: googlePassword,
+          role: saved.role,
+        },
+      });
+
+  const token = signToken({ sub: user.id, role: user.role, email: user.email, name: user.name });
+  const redirect = new URL(`${config.clientOrigin}/google-auth`);
+  redirect.searchParams.set('token', token);
+  redirect.searchParams.set('user', encodeURIComponent(JSON.stringify({ id: user.id, email: user.email, name: user.name, role: user.role })));
+  return res.redirect(redirect.toString());
 });
 
 router.post('/register', async (req, res) => {

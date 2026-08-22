@@ -143,6 +143,15 @@ router.get('/:id', authorize(Role.ADMIN, Role.EXAMINER, Role.PROCTOR), async (re
   res.json(exam);
 });
 
+router.delete('/:id', authorize(Role.ADMIN, Role.EXAMINER), async (req, res) => {
+  try {
+    await prisma.exam.delete({ where: { id: req.params.id } });
+    return res.status(204).end();
+  } catch {
+    return res.status(404).json({ error: 'Exam not found' });
+  }
+});
+
 // Manually trigger generation (also runs automatically via scheduler for offline).
 router.post('/:id/generate', authorize(Role.ADMIN, Role.EXAMINER), async (req, res) => {
   try {
@@ -180,10 +189,49 @@ router.get('/:id/papers/:paperId/pdf', authorize(Role.ADMIN, Role.EXAMINER), asy
       text: it.question.text,
       type: it.question.type,
       options: it.question.options as { id: string; text: string }[] | null,
+      correctKey: null,
     })),
   });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${paper.exam.title}-${paper.setLabel}.pdf"`);
+  res.send(pdf);
+});
+
+router.get('/:id/papers/:paperId/answer-key-pdf', authorize(Role.ADMIN, Role.EXAMINER), async (req, res) => {
+  const paper = await prisma.generatedPaper.findUnique({
+    where: { id: req.params.paperId },
+    include: {
+      exam: true,
+      generatedBy: true,
+      items: { include: { question: true }, orderBy: { order: 'asc' } },
+    },
+  });
+  if (!paper || paper.examId !== req.params.id) {
+    return res.status(404).json({ error: 'Paper not found' });
+  }
+  const pdf = await buildPaperPdf({
+    examTitle: paper.exam.title,
+    setLabel: `${paper.setLabel} - Answer Key`,
+    instructions: paper.exam.instructions,
+    durationMinutes: paper.exam.durationMinutes,
+    examDate: paper.examDate,
+    generatedAt: paper.generatedAt,
+    generatedByName: paper.generatedBy.name,
+    totalWeight: paper.totalWeight,
+    showAnswers: true,
+    questions: paper.items.map((it) => ({
+      order: it.order + 1,
+      text: it.question.text,
+      type: it.question.type,
+      options: it.question.options as { id: string; text: string }[] | null,
+      correctKey: it.question.correctKey,
+    })),
+  });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="${paper.exam.title}-${paper.setLabel}-answer-key.pdf"`,
+  );
   res.send(pdf);
 });
 

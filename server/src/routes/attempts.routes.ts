@@ -125,4 +125,81 @@ router.post('/:attemptId/submit', authorize(Role.STUDENT), async (req, res) => {
   res.json({ submittedAt: updated.submittedAt, score });
 });
 
+router.get('/me', authorize(Role.STUDENT), async (req, res) => {
+  const attempts = await prisma.attempt.findMany({
+    where: { studentId: req.user!.sub, submittedAt: { not: null } },
+    orderBy: { submittedAt: 'desc' },
+    include: {
+      exam: {
+        select: {
+          id: true,
+          title: true,
+          mode: true,
+          durationMinutes: true,
+          questionsPerSet: true,
+          easyPerSet: true,
+          mediumPerSet: true,
+          hardPerSet: true,
+        },
+      },
+    },
+  });
+
+  res.json(
+    attempts.map((attempt) => {
+      const totalQuestions = attempt.exam.questionsPerSet || attempt.exam.easyPerSet + attempt.exam.mediumPerSet + attempt.exam.hardPerSet;
+      const score = attempt.score ?? 0;
+      return {
+        id: attempt.id,
+        examId: attempt.examId,
+        examTitle: attempt.exam.title,
+        mode: attempt.exam.mode,
+        setLabel: attempt.setLabel,
+        score,
+        totalQuestions,
+        percentage: totalQuestions > 0 ? Math.round((score / totalQuestions) * 100) : 0,
+        submittedAt: attempt.submittedAt,
+      };
+    }),
+  );
+});
+
+router.get('/exam/:examId', authorize(Role.ADMIN, Role.EXAMINER, Role.PROCTOR), async (req, res) => {
+  const attempts = await prisma.attempt.findMany({
+    where: { examId: req.params.examId, submittedAt: { not: null } },
+    orderBy: { submittedAt: 'desc' },
+    include: {
+      student: { select: { id: true, name: true, email: true } },
+      exam: {
+        select: {
+          id: true,
+          title: true,
+          mode: true,
+          durationMinutes: true,
+          questionsPerSet: true,
+          easyPerSet: true,
+          mediumPerSet: true,
+          hardPerSet: true,
+        },
+      },
+    },
+  });
+
+  res.json(
+    attempts.map((attempt) => {
+      const totalQuestions = attempt.exam.questionsPerSet || attempt.exam.easyPerSet + attempt.exam.mediumPerSet + attempt.exam.hardPerSet;
+      const score = attempt.score ?? 0;
+      return {
+        id: attempt.id,
+        student: attempt.student,
+        setLabel: attempt.setLabel,
+        score,
+        totalQuestions,
+        percentage: totalQuestions > 0 ? Math.round((score / totalQuestions) * 100) : 0,
+        submittedAt: attempt.submittedAt,
+      };
+    }),
+  );
+});
+
 export default router;

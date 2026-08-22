@@ -35,6 +35,11 @@ export function Signup() {
     }
   }
 
+  function signUpWithGoogle() {
+    const base = import.meta.env.VITE_API_URL || '/api';
+    window.location.href = `${base}/auth/google/start?role=${encodeURIComponent(role)}`;
+  }
+
   return (
     <div className="mx-auto flex min-h-screen max-w-md items-center px-6 py-10">
       <Card className="w-full">
@@ -49,7 +54,14 @@ export function Signup() {
             <input className={inputClass} type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           </Field>
           <Field label="Password">
-            <input className={inputClass} type="password" minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <input
+              className={inputClass}
+              type="password"
+              minLength={6}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
           </Field>
 
           <div>
@@ -73,8 +85,21 @@ export function Signup() {
           </div>
 
           {error && <p className="text-sm text-sakura-600">{error}</p>}
-          <Button className="w-full" disabled={loading}>{loading ? 'Creating account…' : 'Create account'}</Button>
+          <Button className="w-full" disabled={loading}>
+            {loading ? 'Creating account...' : 'Create account'}
+          </Button>
         </form>
+
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={signUpWithGoogle}
+            className="w-full rounded-xl border border-sakura-200 bg-white/80 px-4 py-3 text-sm font-semibold text-ink transition hover:bg-white"
+          >
+            Continue with Google
+          </button>
+          <p className="mt-2 text-xs text-ink/45">Google sign-in will create an account with the selected role.</p>
+        </div>
 
         <p className="mt-5 text-center text-sm text-ink/60">
           Already have an account? <Link to="/login" className="font-medium text-sakura-600 underline">Sign in</Link>
