@@ -132,11 +132,9 @@ export function ExamBuilder() {
             <Field label="Exam date & time">
               <input className={inputClass} type="datetime-local" value={form.examDate} onChange={(e) => set('examDate', e.target.value)} required />
             </Field>
-            {form.mode === 'OFFLINE' && (
-              <Field label="Generate paper (hours before)">
-                <input className={inputClass} type="number" min={0} value={form.leadTimeHours} onChange={num('leadTimeHours')} />
-              </Field>
-            )}
+            <Field label={form.mode === 'OFFLINE' ? 'Generate paper (hours before)' : 'Open exam window (hours before)'}>
+              <input className={inputClass} type="number" min={0} value={form.leadTimeHours} onChange={num('leadTimeHours')} />
+            </Field>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

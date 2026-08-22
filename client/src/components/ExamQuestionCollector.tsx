@@ -15,6 +15,7 @@ interface Props {
 
 interface QuestionDraft {
   text: string;
+  type: 'MCQ' | 'SUBJECTIVE';
   optionA: string;
   optionB: string;
   optionC: string;
@@ -35,7 +36,7 @@ const EMPTY_COUNTS: Counts = { EASY: 0, MEDIUM: 0, HARD: 0 };
 const EMPTY_DRAFTS: Drafts = { EASY: [], MEDIUM: [], HARD: [] };
 
 function blankQuestion(): QuestionDraft {
-  return { text: '', optionA: '', optionB: '', optionC: '', optionD: '', correctKey: 'a' };
+  return { text: '', type: 'MCQ', optionA: '', optionB: '', optionC: '', optionD: '', correctKey: 'a' };
 }
 
 function safeCount(value: number) {
@@ -116,11 +117,11 @@ export function ExamQuestionCollector({
 
     const questions: Array<{
       text: string;
-      type: 'MCQ';
+      type: 'MCQ' | 'SUBJECTIVE';
       difficulty: Difficulty;
       subject?: string;
-      options: { id: string; text: string }[];
-      correctKey: string;
+      options?: { id: string; text: string }[];
+      correctKey?: string;
     }> = [];
     const problems: string[] = [];
 
@@ -135,18 +136,18 @@ export function ExamQuestionCollector({
         ].filter((option) => option.text);
 
         if (!draft.text.trim()) problems.push(`${row} needs question text`);
-        if (options.length < 2) problems.push(`${row} needs at least two options`);
-        if (!options.some((option) => option.id === draft.correctKey)) {
+        if (draft.type === 'MCQ' && options.length < 2) problems.push(`${row} needs at least two options`);
+        if (draft.type === 'MCQ' && !options.some((option) => option.id === draft.correctKey)) {
           problems.push(`${row} correct option is blank`);
         }
 
         questions.push({
           text: draft.text.trim(),
-          type: 'MCQ',
+          type: draft.type,
           difficulty: key,
           subject: subject.trim() || undefined,
-          options,
-          correctKey: draft.correctKey,
+          options: draft.type === 'MCQ' ? options : undefined,
+          correctKey: draft.type === 'MCQ' ? draft.correctKey : undefined,
         });
       });
     });
@@ -234,34 +235,51 @@ export function ExamQuestionCollector({
                         onChange={(e) => updateDraft(key, index, { text: e.target.value })}
                       />
                     </label>
-                    <div className="mt-3 grid gap-2 md:grid-cols-2">
-                      {(['a', 'b', 'c', 'd'] as const).map((optionKey) => (
-                        <label key={optionKey} className="flex items-center gap-2">
-                          <input
-                            type="radio"
-                            name={`${key}-${index}-correct`}
-                            checked={draft.correctKey === optionKey}
-                            onChange={() => updateDraft(key, index, { correctKey: optionKey })}
-                          />
-                          <input
-                            className={inputClass}
-                            value={
-                              optionKey === 'a' ? draft.optionA :
-                              optionKey === 'b' ? draft.optionB :
-                              optionKey === 'c' ? draft.optionC :
-                              draft.optionD
-                            }
-                            onChange={(e) =>
-                              updateDraft(key, index, {
-                                [optionKey === 'a' ? 'optionA' : optionKey === 'b' ? 'optionB' : optionKey === 'c' ? 'optionC' : 'optionD']:
-                                  e.target.value,
-                              })
-                            }
-                            placeholder={`Option ${optionKey.toUpperCase()}`}
-                          />
-                        </label>
-                      ))}
-                    </div>
+                    <label className="mt-3 block">
+                      <span className="mb-1 block text-xs font-semibold text-ink/60">Question type</span>
+                      <select
+                        className={inputClass}
+                        value={draft.type}
+                        onChange={(e) => updateDraft(key, index, { type: e.target.value as QuestionDraft['type'] })}
+                      >
+                        <option value="MCQ">MCQ</option>
+                        <option value="SUBJECTIVE">Subjective</option>
+                      </select>
+                    </label>
+                    {draft.type === 'MCQ' ? (
+                      <div className="mt-3 grid gap-2 md:grid-cols-2">
+                        {(['a', 'b', 'c', 'd'] as const).map((optionKey) => (
+                          <label key={optionKey} className="flex items-center gap-2">
+                            <input
+                              type="radio"
+                              name={`${key}-${index}-correct`}
+                              checked={draft.correctKey === optionKey}
+                              onChange={() => updateDraft(key, index, { correctKey: optionKey })}
+                            />
+                            <input
+                              className={inputClass}
+                              value={
+                                optionKey === 'a' ? draft.optionA :
+                                optionKey === 'b' ? draft.optionB :
+                                optionKey === 'c' ? draft.optionC :
+                                draft.optionD
+                              }
+                              onChange={(e) =>
+                                updateDraft(key, index, {
+                                  [optionKey === 'a' ? 'optionA' : optionKey === 'b' ? 'optionB' : optionKey === 'c' ? 'optionC' : 'optionD']:
+                                    e.target.value,
+                                })
+                              }
+                              placeholder={`Option ${optionKey.toUpperCase()}`}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-3 rounded-lg bg-white/70 px-3 py-2 text-xs text-ink/55">
+                        Subjective answers are checked automatically after submission and can still be reviewed by staff.
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
