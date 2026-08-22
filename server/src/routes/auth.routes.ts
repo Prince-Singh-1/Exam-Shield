@@ -26,8 +26,13 @@ const googleSchema = z.object({
   role: z.nativeEnum(Role).default(Role.STUDENT),
 });
 
+function configuredGoogleClientId() {
+  // Render values occasionally get pasted with surrounding whitespace or quotes.
+  return (process.env.GOOGLE_CLIENT_ID ?? '').trim().replace(/^["']|["']$/g, '');
+}
+
 async function verifyGoogleCredential(credential: string) {
-  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientId = configuredGoogleClientId();
   if (!clientId) {
     throw new Error('Google sign-in is not configured on the server.');
   }
@@ -37,7 +42,7 @@ async function verifyGoogleCredential(credential: string) {
   }
   const profile = (await response.json()) as { aud?: string; email?: string; name?: string; sub?: string; email_verified?: string | boolean };
   if (profile.aud !== clientId) {
-    throw new Error('Google client mismatch.');
+    throw new Error(`Google client mismatch. Vercel token client: ${profile.aud || 'unknown'}; Render GOOGLE_CLIENT_ID: ${clientId}.`);
   }
   if (!profile.email || profile.email_verified === 'false' || profile.email_verified === false) {
     throw new Error('Google email is not verified.');
@@ -48,6 +53,13 @@ async function verifyGoogleCredential(credential: string) {
     googleId: profile.sub || profile.email,
   };
 }
+
+router.get('/google/debug', (_req, res) => {
+  return res.json({
+    googleClientId: configuredGoogleClientId(),
+    clientOrigin: process.env.CLIENT_ORIGIN ?? 'http://localhost:5173',
+  });
+});
 
 router.post('/register', async (req, res) => {
   const parsed = registerSchema.safeParse(req.body);
