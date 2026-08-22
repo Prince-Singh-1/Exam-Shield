@@ -143,6 +143,70 @@ router.get('/:id', authorize(Role.ADMIN, Role.EXAMINER, Role.PROCTOR), async (re
   res.json(exam);
 });
 
+router.get('/:id/performance', authorize(Role.ADMIN, Role.EXAMINER, Role.PROCTOR), async (req, res) => {
+  const exam = await prisma.exam.findUnique({ where: { id: req.params.id }, select: { id: true, title: true } });
+  if (!exam) return res.status(404).json({ error: 'Exam not found' });
+  const results = await prisma.examResult.findMany({
+    where: { examId: exam.id },
+    orderBy: { percentage: 'desc' },
+    include: {
+      student: { select: { id: true, name: true, email: true } },
+      attempt: { select: { startedAt: true, submittedAt: true, setLabel: true } },
+    },
+  });
+  const average =
+    results.length > 0 ? Math.round((results.reduce((sum, result) => sum + result.percentage, 0) / results.length) * 100) / 100 : 0;
+  res.json({
+    exam,
+    summary: {
+      attempts: results.length,
+      average,
+      highest: results[0]?.percentage ?? 0,
+      lowest: results.at(-1)?.percentage ?? 0,
+    },
+    results,
+  });
+});
+
+router.get('/:id/answer-keys', authorize(Role.ADMIN, Role.EXAMINER), async (req, res) => {
+  const exam = await prisma.exam.findUnique({
+    where: { id: req.params.id },
+    include: {
+      papers: {
+        include: { items: { include: { question: true }, orderBy: { order: 'asc' } } },
+        orderBy: { setLabel: 'asc' },
+      },
+      results: {
+        include: { student: { select: { name: true, email: true } } },
+        orderBy: { createdAt: 'desc' },
+      },
+    },
+  });
+  if (!exam) return res.status(404).json({ error: 'Exam not found' });
+
+  const offlineKeys = exam.papers.map((paper) => ({
+    setLabel: paper.setLabel,
+    source: 'generated-paper',
+    answers: paper.items.map((item) => ({
+      order: item.order + 1,
+      questionId: item.questionId,
+      type: item.question.type,
+      question: item.question.text,
+      correctKey: item.question.type === 'MCQ' ? item.question.correctKey : null,
+      expected: item.question.type === 'SUBJECTIVE' ? 'Subjective answer should be manually reviewed.' : null,
+    })),
+  }));
+
+  const onlineKeys = exam.results.map((result) => ({
+    setLabel: result.setLabel ?? 'Online set',
+    source: 'submitted-attempt',
+    student: result.student,
+    answers: result.answerKey,
+  }));
+
+  res.json({ exam: { id: exam.id, title: exam.title, mode: exam.mode }, keys: [...offlineKeys, ...onlineKeys] });
+});
+
 router.delete('/:id', authorize(Role.ADMIN, Role.EXAMINER), async (req, res) => {
   const exam = await prisma.exam.findUnique({
     where: { id: req.params.id },

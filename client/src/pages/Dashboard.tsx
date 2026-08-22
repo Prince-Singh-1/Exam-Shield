@@ -23,10 +23,41 @@ interface Exam {
   _count?: { papers: number; attempts: number };
 }
 
+interface ExamResult {
+  id: string;
+  setLabel?: string | null;
+  mcqScore: number;
+  totalMcq: number;
+  subjectiveScore: number;
+  totalSubjective: number;
+  totalScore: number;
+  maxScore: number;
+  percentage: number;
+  answeredCount: number;
+  totalQuestions: number;
+  createdAt: string;
+  exam?: { id: string; title: string; examDate: string; mode: string };
+  student?: { name: string; email: string };
+}
+
+interface PerformancePayload {
+  exam: { id: string; title: string };
+  summary: { attempts: number; average: number; highest: number; lowest: number };
+  results: ExamResult[];
+}
+
+interface AnswerKeyPayload {
+  exam: { id: string; title: string; mode: string };
+  keys: Array<{ setLabel: string; source: string; student?: { name: string; email: string }; answers: any }>;
+}
+
 export function Dashboard() {
   const { user, logout } = useAuth();
   const nav = useNavigate();
   const [exams, setExams] = useState<Exam[]>([]);
+  const [studentResults, setStudentResults] = useState<ExamResult[]>([]);
+  const [performance, setPerformance] = useState<PerformancePayload | null>(null);
+  const [answerKeys, setAnswerKeys] = useState<AnswerKeyPayload | null>(null);
   const [busyExamId, setBusyExamId] = useState('');
   const [message, setMessage] = useState('');
   const isStaff = user && ['ADMIN', 'EXAMINER'].includes(user.role);
@@ -41,6 +72,14 @@ export function Dashboard() {
       loadExams().catch(() => setMessage('Could not load exams.'));
     }
   }, [isStaff, user]);
+
+  useEffect(() => {
+    if (user?.role === 'STUDENT') {
+      api.get('/attempts/results/me')
+        .then((r) => setStudentResults(r.data))
+        .catch(() => setMessage('Could not load your result history.'));
+    }
+  }, [user]);
 
   async function generate(id: string) {
     setMessage('');
@@ -102,6 +141,34 @@ export function Dashboard() {
     }
   }
 
+  async function showPerformance(exam: Exam) {
+    setMessage('');
+    setBusyExamId(exam.id);
+    try {
+      const { data } = await api.get(`/exams/${exam.id}/performance`);
+      setPerformance(data);
+      setAnswerKeys(null);
+    } catch (err: any) {
+      setMessage(err?.response?.data?.error ?? 'Could not load student performance.');
+    } finally {
+      setBusyExamId('');
+    }
+  }
+
+  async function showAnswerKeys(exam: Exam) {
+    setMessage('');
+    setBusyExamId(exam.id);
+    try {
+      const { data } = await api.get(`/exams/${exam.id}/answer-keys`);
+      setAnswerKeys(data);
+      setPerformance(null);
+    } catch (err: any) {
+      setMessage(err?.response?.data?.error ?? 'Could not load answer keys.');
+    } finally {
+      setBusyExamId('');
+    }
+  }
+
   return (
     <div className="mx-auto max-w-5xl px-6 py-10">
       <header className="mb-8 flex items-center justify-between">
@@ -122,13 +189,16 @@ export function Dashboard() {
       )}
 
       {user?.role === 'STUDENT' && (
-        <Card>
-          <h2 className="font-serif text-xl font-bold">Your online exams</h2>
-          <p className="mt-2 text-sm text-ink/60">
-            Enter the exam ID provided by your invigilator to begin a proctored attempt.
-          </p>
-          <ExamEntry />
-        </Card>
+        <div className="space-y-4">
+          <Card>
+            <h2 className="font-serif text-xl font-bold">Your online exams</h2>
+            <p className="mt-2 text-sm text-ink/60">
+              Enter the exam ID provided by your invigilator to begin a proctored attempt.
+            </p>
+            <ExamEntry />
+          </Card>
+          <StudentResults results={studentResults} />
+        </div>
       )}
 
       {isStaff && (
@@ -161,6 +231,12 @@ export function Dashboard() {
                       {busyExamId === ex.id ? 'Working...' : 'Generate now'}
                     </Button>
                   )}
+                  <Button onClick={() => showPerformance(ex)} disabled={busyExamId === ex.id}>
+                    Performance
+                  </Button>
+                  <Button onClick={() => showAnswerKeys(ex)} disabled={busyExamId === ex.id}>
+                    Answer keys
+                  </Button>
                   <button
                     type="button"
                     onClick={() => deleteExam(ex)}
@@ -189,8 +265,118 @@ export function Dashboard() {
               ) : null}
             </Card>
           ))}
+          {performance && <PerformancePanel data={performance} />}
+          {answerKeys && <AnswerKeyPanel data={answerKeys} />}
         </div>
       )}
+    </div>
+  );
+}
+
+function StudentResults({ results }: { results: ExamResult[] }) {
+  return (
+    <Card>
+      <h2 className="font-serif text-xl font-bold text-sakura-600">My exam results</h2>
+      {results.length === 0 ? (
+        <p className="mt-2 text-sm text-ink/60">Submitted exam results will appear here.</p>
+      ) : (
+        <div className="mt-4 space-y-3">
+          {results.map((result) => (
+            <div key={result.id} className="rounded-xl border border-sakura-100 bg-white/70 p-4">
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="font-semibold text-ink">{result.exam?.title ?? 'Exam'}</p>
+                  <p className="text-xs text-ink/50">
+                    {result.setLabel ?? 'Online set'} · {new Date(result.createdAt).toLocaleString()}
+                  </p>
+                </div>
+                <div className="text-left md:text-right">
+                  <p className="text-lg font-bold text-sakura-600">{result.percentage}%</p>
+                  <p className="text-xs text-ink/60">{result.totalScore} / {result.maxScore} marks</p>
+                </div>
+              </div>
+              <div className="mt-3 grid gap-2 text-xs text-ink/60 md:grid-cols-3">
+                <p>MCQ: {result.mcqScore} / {result.totalMcq}</p>
+                <p>Subjective: {result.subjectiveScore} / {result.totalSubjective}</p>
+                <p>Answered: {result.answeredCount} / {result.totalQuestions}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function PerformancePanel({ data }: { data: PerformancePayload }) {
+  return (
+    <Card>
+      <h3 className="font-serif text-xl font-bold text-sakura-600">Student performance · {data.exam.title}</h3>
+      <div className="mt-4 grid gap-3 md:grid-cols-4">
+        <Metric label="Attempts" value={data.summary.attempts} />
+        <Metric label="Average" value={`${data.summary.average}%`} />
+        <Metric label="Highest" value={`${data.summary.highest}%`} />
+        <Metric label="Lowest" value={`${data.summary.lowest}%`} />
+      </div>
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="text-xs uppercase text-ink/40">
+            <tr>
+              <th className="py-2">Student</th>
+              <th className="py-2">Set</th>
+              <th className="py-2">Score</th>
+              <th className="py-2">MCQ</th>
+              <th className="py-2">Subjective</th>
+              <th className="py-2">Answered</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.results.map((result) => (
+              <tr key={result.id} className="border-t border-sakura-100">
+                <td className="py-2">{result.student?.name}<div className="text-xs text-ink/40">{result.student?.email}</div></td>
+                <td className="py-2">{result.setLabel ?? 'Set'}</td>
+                <td className="py-2 font-semibold text-sakura-600">{result.percentage}%</td>
+                <td className="py-2">{result.mcqScore} / {result.totalMcq}</td>
+                <td className="py-2">{result.subjectiveScore} / {result.totalSubjective}</td>
+                <td className="py-2">{result.answeredCount} / {result.totalQuestions}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+function AnswerKeyPanel({ data }: { data: AnswerKeyPayload }) {
+  return (
+    <Card>
+      <h3 className="font-serif text-xl font-bold text-sakura-600">Answer keys · {data.exam.title}</h3>
+      {data.keys.length === 0 ? (
+        <p className="mt-2 text-sm text-ink/60">No answer keys are available until papers are generated or attempts are submitted.</p>
+      ) : (
+        <div className="mt-4 space-y-3">
+          {data.keys.map((key, index) => (
+            <details key={`${key.setLabel}-${index}`} className="rounded-xl border border-sakura-100 bg-white/70 p-4">
+              <summary className="cursor-pointer font-semibold text-ink">
+                {key.setLabel}{key.student ? ` · ${key.student.name}` : ''}
+              </summary>
+              <pre className="mt-3 max-h-72 overflow-auto rounded-lg bg-sakura-50 p-3 text-xs text-ink/70">
+                {JSON.stringify(key.answers, null, 2)}
+              </pre>
+            </details>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-lg border border-sakura-100 bg-white/70 px-3 py-2">
+      <p className="text-xs text-ink/45">{label}</p>
+      <p className="mt-1 text-lg font-bold text-ink">{value}</p>
     </div>
   );
 }

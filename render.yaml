@@ -17,3 +17,5 @@ services:
         sync: false   # paste your Neon connection string in the dashboard
       - key: CLIENT_ORIGIN
         sync: false   # set to your Vercel URL after the frontend is deployed
+      - key: GOOGLE_CLIENT_ID
+        sync: false   # same OAuth client id as VITE_GOOGLE_CLIENT_ID in Vercel

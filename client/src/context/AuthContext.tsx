@@ -5,6 +5,7 @@ interface AuthCtx {
   user: AuthUser | null;
   login: (email: string, password: string, mode?: 'ONLINE' | 'OFFLINE') => Promise<AuthUser>;
   register: (input: { name: string; email: string; password: string; role: Role }) => Promise<AuthUser>;
+  googleLogin: (credential: string, role: Role) => Promise<AuthUser>;
   logout: () => void;
 }
 
@@ -37,13 +38,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return login(input.email, input.password);
   }
 
+  async function googleLogin(credential: string, role: Role) {
+    const { data } = await api.post('/auth/google', { credential, role });
+    localStorage.setItem('es_token', data.token);
+    localStorage.setItem('es_user', JSON.stringify(data.user));
+    setUser(data.user);
+    return data.user as AuthUser;
+  }
+
   function logout() {
     localStorage.removeItem('es_token');
     localStorage.removeItem('es_user');
     setUser(null);
   }
 
-  return <Ctx.Provider value={{ user, login, register, logout }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ user, login, register, googleLogin, logout }}>{children}</Ctx.Provider>;
 }
 
 export const useAuth = () => useContext(Ctx);

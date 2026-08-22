@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Role } from '../lib/api';
@@ -12,14 +12,53 @@ const ROLES: { value: Role; label: string; desc: string; icon: string }[] = [
 ];
 
 export function Signup() {
-  const { register } = useAuth();
+  const { register, googleLogin } = useAuth();
   const nav = useNavigate();
+  const googleButtonRef = useRef<HTMLDivElement | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<Role>('EXAMINER');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+
+  useEffect(() => {
+    if (!googleClientId || !googleButtonRef.current) return;
+    const init = () => {
+      const google = (window as any).google;
+      if (!google?.accounts?.id || !googleButtonRef.current) return;
+      google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: async (response: { credential?: string }) => {
+          if (!response.credential) return;
+          setError('');
+          setLoading(true);
+          try {
+            const user = await googleLogin(response.credential, role);
+            nav(user.role === 'PROCTOR' ? '/proctor' : '/dashboard');
+          } catch (err: any) {
+            setError(err?.response?.data?.error ?? 'Google authorization failed');
+          } finally {
+            setLoading(false);
+          }
+        },
+      });
+      googleButtonRef.current.innerHTML = '';
+      google.accounts.id.renderButton(googleButtonRef.current, { theme: 'outline', size: 'large', width: 360 });
+    };
+
+    if ((window as any).google?.accounts?.id) {
+      init();
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = init;
+    document.body.appendChild(script);
+  }, [googleClientId, googleLogin, nav, role]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -75,6 +114,16 @@ export function Signup() {
           {error && <p className="text-sm text-sakura-600">{error}</p>}
           <Button className="w-full" disabled={loading}>{loading ? 'Creating account…' : 'Create account'}</Button>
         </form>
+
+        <div className="mt-4 border-t border-sakura-100 pt-4">
+          {googleClientId ? (
+            <div ref={googleButtonRef} className="flex justify-center" />
+          ) : (
+            <p className="rounded-xl bg-sakura-50 px-4 py-3 text-xs text-ink/60">
+              Google authorization is ready after setting VITE_GOOGLE_CLIENT_ID on Vercel and GOOGLE_CLIENT_ID on Render.
+            </p>
+          )}
+        </div>
 
         <p className="mt-5 text-center text-sm text-ink/60">
           Already have an account? <Link to="/login" className="font-medium text-sakura-600 underline">Sign in</Link>

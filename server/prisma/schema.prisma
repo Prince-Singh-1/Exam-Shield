@@ -66,6 +66,7 @@ model User {
   generatedPapers  GeneratedPaper[]  @relation("PaperGenerator")
   attempts         Attempt[]
   violations       Violation[]
+  results          ExamResult[]
 }
 
 model Question {
@@ -105,6 +106,7 @@ model Exam {
 
   papers          GeneratedPaper[]
   attempts        Attempt[]
+  results         ExamResult[]
 }
 
 model GeneratedPaper {
@@ -146,6 +148,35 @@ model Attempt {
   score       Int?
 
   violations  Violation[]
+  result      ExamResult?
+}
+
+model ExamResult {
+  id               String   @id @default(cuid())
+  examId           String
+  exam             Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  attemptId        String   @unique
+  attempt          Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  studentId        String
+  student          User     @relation(fields: [studentId], references: [id])
+  setLabel         String?
+  studentDetails   Json?
+  submittedAnswers Json
+  answerKey        Json
+  mcqScore         Int      @default(0)
+  totalMcq         Int      @default(0)
+  subjectiveScore  Int      @default(0)
+  totalSubjective  Int      @default(0)
+  totalScore       Int      @default(0)
+  maxScore         Int      @default(0)
+  answeredCount    Int      @default(0)
+  totalQuestions   Int      @default(0)
+  percentage       Float    @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([examId])
+  @@index([studentId])
 }
 
 model Violation {

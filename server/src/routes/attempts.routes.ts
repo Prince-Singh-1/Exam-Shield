@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { ExamMode, Role } from '@prisma/client';
+import { ExamMode, Prisma, Role } from '@prisma/client';
 import { prisma } from '../prisma';
 import { authenticate, authorize } from '../middleware/auth';
 import { generateBalancedSets } from '../services/setGenerator';
@@ -16,6 +16,10 @@ type AttemptAnswers = {
   subjectiveResults?: Record<string, { score: number; maxScore: number; feedback: string }>;
 };
 
+function asJson(value: unknown) {
+  return value as Prisma.InputJsonValue;
+}
+
 async function loadPublicQuestions(questionIds: string[]) {
   const questions = await prisma.question.findMany({
     where: { id: { in: questionIds } },
@@ -28,6 +32,18 @@ async function loadPublicQuestions(questionIds: string[]) {
   }
   return ordered;
 }
+
+router.get('/results/me', authorize(Role.STUDENT), async (req, res) => {
+  const results = await prisma.examResult.findMany({
+    where: { studentId: req.user!.sub },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      exam: { select: { id: true, title: true, examDate: true, mode: true } },
+      attempt: { select: { startedAt: true, submittedAt: true, setLabel: true } },
+    },
+  });
+  res.json(results);
+});
 
 /**
  * Student starts an ONLINE exam. The paper is assembled JUST NOW from the bank,
@@ -197,6 +213,7 @@ router.post('/:attemptId/submit', authorize(Role.STUDENT), async (req, res) => {
       ? saved.questionIds
       : Object.keys(parsed.data.answers);
   const questions = await prisma.question.findMany({ where: { id: { in: questionIds } } });
+  const byId = new Map(questions.map((question) => [question.id, question]));
   const assignedIds = new Set(questionIds);
   const submittedAnswers = Object.fromEntries(
     Object.entries(parsed.data.answers).filter(([questionId]) => assignedIds.has(questionId)),
@@ -207,6 +224,16 @@ router.post('/:attemptId/submit', authorize(Role.STUDENT), async (req, res) => {
   const subjectiveResults: AttemptAnswers['subjectiveResults'] = {};
   let subjectiveScore = 0;
   let totalSubjective = 0;
+  const answerKey = questionIds.map((questionId, index) => {
+    const question = byId.get(questionId);
+    return {
+      questionId,
+      order: index + 1,
+      type: question?.type,
+      correctKey: question?.type === 'MCQ' ? question.correctKey : null,
+      expected: question?.type === 'SUBJECTIVE' ? 'Subjective answer scored by checker and available for staff review.' : null,
+    };
+  });
   for (const q of questions) {
     if (q.type === 'MCQ' && q.correctKey && submittedAnswers[q.id] === q.correctKey) score++;
     if (q.type === 'SUBJECTIVE') {
@@ -218,19 +245,49 @@ router.post('/:attemptId/submit', authorize(Role.STUDENT), async (req, res) => {
   }
   const totalMcq = questions.filter((question) => question.type === 'MCQ').length;
   const answeredCount = Object.keys(submittedAnswers).length;
+  const totalScore = score + subjectiveScore;
+  const maxScore = totalMcq + totalSubjective;
+  const percentage = maxScore > 0 ? Math.round((totalScore / maxScore) * 10000) / 100 : 0;
 
-  const updated = await prisma.attempt.update({
-    where: { id: attempt.id },
-    data: {
-      submittedAt: new Date(),
-      answers: {
-        questionIds,
-        submittedAnswers,
-        studentDetails: parsed.data.studentDetails ?? saved?.studentDetails,
-        subjectiveResults,
+  const resultPayload = {
+    examId: attempt.examId,
+    attemptId: attempt.id,
+    studentId: attempt.studentId,
+    setLabel: attempt.setLabel,
+    studentDetails: asJson(parsed.data.studentDetails ?? saved?.studentDetails ?? {}),
+    submittedAnswers: asJson(submittedAnswers),
+    answerKey: asJson(answerKey),
+    mcqScore: score,
+    totalMcq,
+    subjectiveScore,
+    totalSubjective,
+    totalScore,
+    maxScore,
+    answeredCount,
+    totalQuestions: questionIds.length,
+    percentage,
+  };
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const savedAttempt = await tx.attempt.update({
+      where: { id: attempt.id },
+      data: {
+        submittedAt: new Date(),
+        answers: {
+          questionIds,
+          submittedAnswers,
+          studentDetails: parsed.data.studentDetails ?? saved?.studentDetails,
+          subjectiveResults,
+        },
+        score,
       },
-      score,
-    },
+    });
+    await tx.examResult.upsert({
+      where: { attemptId: attempt.id },
+      update: resultPayload,
+      create: resultPayload,
+    });
+    return savedAttempt;
   });
   res.json({
     submittedAt: updated.submittedAt,
@@ -238,6 +295,10 @@ router.post('/:attemptId/submit', authorize(Role.STUDENT), async (req, res) => {
     totalMcq,
     subjectiveScore,
     totalSubjective,
+    totalScore,
+    maxScore,
+    percentage,
+    answerKey,
     subjectiveResults,
     totalQuestions: questionIds.length,
     answeredCount,
